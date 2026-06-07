@@ -53,6 +53,8 @@ class Notifier:
         self.tg_enabled = _cfg_bool(cfg, "telegram", "enabled")
         self.tg_token   = _cfg(cfg, "telegram", "token")
         self.tg_chat    = _cfg(cfg, "telegram", "chat_id")
+        self.daily_summary = _cfg_bool(cfg, "telegram", "daily_summary", False)
+        self.summary_time  = _cfg(cfg, "telegram", "summary_time", "21:00")
 
         # E-mail
         self.em_enabled = _cfg_bool(cfg, "email", "enabled")
@@ -99,6 +101,30 @@ class Notifier:
         icon = {"info": "ℹ️", "warning": "⚠️", "critical": "🔴"}.get(level, "•")
         self._tg_send(f"{icon} *{level.upper()}*\n{message}")
         self._email_send(f"Solar Alert [{level}]", message)
+
+    def send_daily_summary(self, peak_pv=None, min_soc=None):
+        """Send a once-a-day digest of today's energy + extremes to Telegram."""
+        if not (self.tg_enabled and self.tg_token):
+            return
+        te = db.get_today_energy() if db else {}
+        s = self.state_getter() or {}
+        def kwh(k): return f"{te[k]:.2f}" if k in te else "—"
+        load = te.get("load_kwh", 0) or 0
+        gin  = te.get("grid_in_kwh", 0) or 0
+        self_suff = f"{max(0, min(100, round((1 - gin/load)*100)))}%" if load > 0 else "—"
+        soc = s.get("bank_battery_soc", s.get("bms1_battery_soc", "?"))
+        lines = [
+            "📅 *Daily Solar Summary*",
+            f"Solar: {kwh('pv_kwh')} kWh",
+            f"Load: {kwh('load_kwh')} kWh",
+            f"Grid in: {kwh('grid_in_kwh')} kWh  ·  out: {kwh('grid_out_kwh')} kWh",
+            f"Battery charged: {kwh('batt_in_kwh')} kWh  ·  used: {kwh('batt_out_kwh')} kWh",
+            f"Self-sufficiency: {self_suff}",
+        ]
+        if peak_pv is not None:  lines.append(f"Peak solar: {peak_pv:.0f} W")
+        if min_soc is not None:  lines.append(f"Lowest SOC: {min_soc:.0f}%")
+        lines.append(f"Battery now: {soc}%")
+        self._tg_send("\n".join(lines))
 
     def _tg_send(self, text: str, chat_id=None):
         if not (self.tg_enabled and self.tg_token and requests):

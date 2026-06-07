@@ -6,7 +6,7 @@ from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from flask import (Flask, render_template, request, jsonify,
-                   session, redirect, url_for, send_file)
+                   session, redirect, url_for, send_file, send_from_directory)
 from flask_socketio import SocketIO
 import paho.mqtt.client as mqtt
 
@@ -123,6 +123,17 @@ def start_mqtt():
 def index():
     _, pwd = auth_creds()
     return render_template("index.html", auth_enabled=bool(pwd))
+
+# ── PWA (installable app) — served at root for correct scope ──────────────────
+@app.route("/sw.js")
+def pwa_sw():
+    return send_from_directory(BASE / "static", "sw.js",
+                               mimetype="application/javascript")
+
+@app.route("/manifest.webmanifest")
+def pwa_manifest():
+    return send_from_directory(BASE / "static", "manifest.webmanifest",
+                               mimetype="application/manifest+json")
 
 LIVE_PATH = BASE.parent / "live_state.json"
 
@@ -396,7 +407,7 @@ def api_automation_save():
 
 # ── Notification / alert config ────────────────────────────────────────────────
 NOTIFY_FIELDS = {
-    "telegram": ["enabled", "token", "chat_id"],
+    "telegram": ["enabled", "token", "chat_id", "daily_summary", "summary_time"],
     "email":    ["enabled", "smtp_host", "smtp_port", "username", "from_addr", "to_addr"],
     "alerts":   ["enabled", "low_soc", "critical_soc", "high_battery_temp",
                  "high_inverter_temp", "high_cell_diff", "overload_pct",

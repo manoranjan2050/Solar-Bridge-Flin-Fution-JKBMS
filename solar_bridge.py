@@ -901,6 +901,9 @@ def main():
     last_persist = 0          # DB snapshot + daily energy push (every 60s)
     last_live    = 0          # live_state.json write for the dashboard (every 3s)
     last_inv_data = {}
+    daily_peak_pv = 0.0       # for the daily Telegram summary
+    daily_min_soc = 101.0
+    summary_sent_date = None
 
     log.info("Polling loop started")
 
@@ -1154,10 +1157,36 @@ def main():
                         log.info("Control (queue): %s = %s", k, v)
                         apply_control(inverter, client, k, str(v))
 
+            # ── Track daily extremes (for the Telegram summary) ──────────
+            _pv = latest_state.get("inverter_pv_power")
+            if _pv is not None and _pv > daily_peak_pv:
+                daily_peak_pv = _pv
+            _soc = latest_state.get("bank_battery_soc", latest_state.get("bms1_battery_soc"))
+            if _soc is not None and _soc < daily_min_soc:
+                daily_min_soc = _soc
+
+            # ── Scheduled daily Telegram summary ─────────────────────────
+            if notifier and getattr(notifier, "daily_summary", False):
+                from datetime import datetime as _dt
+                nowdt = _dt.now()
+                today_str = nowdt.date().isoformat()
+                if nowdt.strftime("%H:%M") == (notifier.summary_time or "21:00") \
+                        and summary_sent_date != today_str:
+                    summary_sent_date = today_str
+                    try:
+                        notifier.send_daily_summary(
+                            peak_pv=daily_peak_pv if daily_peak_pv > 0 else None,
+                            min_soc=daily_min_soc if daily_min_soc <= 100 else None)
+                        log.info("Daily summary sent to Telegram")
+                    except Exception as e:
+                        log.warning("Daily summary failed: %s", e)
+
             # ── Periodic add-on tasks ────────────────────────────────────
             # Midnight rollover for daily energy
-            if energy.rollover_if_new_day() and notifier:
-                notifier.send("info", "📅 New day — daily energy counters reset.")
+            if energy.rollover_if_new_day():
+                daily_peak_pv = 0.0; daily_min_soc = 101.0
+                if notifier:
+                    notifier.send("info", "📅 New day — daily energy counters reset.")
 
             # Live snapshot file for the dashboard (works even if MQTT is down)
             if now - last_live >= 3 and latest_state:

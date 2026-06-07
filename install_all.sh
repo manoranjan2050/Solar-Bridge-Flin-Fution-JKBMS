@@ -208,8 +208,41 @@ python3 -m venv "$INSTALL_DIR/venv"
     "flask-socketio>=5.3.0" \
     "eventlet>=0.35.0" \
     "requests>=2.31.0" \
+    "Pillow>=10.0.0" \
     -q
 ok "Python packages installed"
+
+# ── Generate PWA icons (once, skipped if already present) ────────────────────
+if [[ ! -f "$DASH_DIR/static/icon-192.png" ]]; then
+    info "Generating PWA icons..."
+    mkdir -p "$DASH_DIR/static"
+    STATIC_DIR="$DASH_DIR/static" "$INSTALL_DIR/venv/bin/python" - <<'ICONEOF'
+from PIL import Image, ImageDraw
+import math, os, sys
+
+def make_icon(size):
+    img = Image.new("RGBA", (size, size), (10, 15, 30, 255))
+    d = ImageDraw.Draw(img)
+    cx = cy = size/2; R = size*0.20
+    ray_in, ray_out = size*0.27, size*0.40
+    for i in range(12):
+        a = math.radians(i*30)
+        d.line([(cx+ray_in*math.cos(a), cy+ray_in*math.sin(a)),
+                (cx+ray_out*math.cos(a), cy+ray_out*math.sin(a))],
+               fill=(245,158,11,255), width=max(2,int(size*0.035)))
+    for gr,al in [(R*1.5,40),(R*1.25,70)]: d.ellipse([cx-gr,cy-gr,cx+gr,cy+gr], fill=(245,158,11,al))
+    d.ellipse([cx-R,cy-R,cx+R,cy+R], fill=(245,158,11,255))
+    d.ellipse([cx-R*.7,cy-R*.8,cx+R*.7,cy+R*.6], fill=(253,230,138,255))
+    return img
+
+dest = os.environ.get("STATIC_DIR", "/opt/solar-bridge/dashboard/static")
+os.makedirs(dest, exist_ok=True)
+for sz in (192, 512): make_icon(sz).save(f"{dest}/icon-{sz}.png")
+make_icon(180).convert("RGB").save(f"{dest}/apple-touch-icon.png")
+print(f"PWA icons written to {dest}")
+ICONEOF
+    ok "PWA icons generated"
+fi
 
 # ── Step 6: Custom domain (mDNS / avahi) ──────────────────────────────────────
 info "Step 6/7 — Configuring custom domain http://$DASH_HOST.local ..."

@@ -2,8 +2,17 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover">
 <title>Solar Bridge</title>
+<!-- PWA -->
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#0a0f1e">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Solar Bridge">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="/static/icon-192.png">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -1189,7 +1198,16 @@ aside#sidebar{display:flex;flex-direction:column}
       <div class="form-group"><label>Chat ID (message @userinfobot)</label>
         <input id="n-tg-chat" placeholder="123456789"></div>
       <p style="font-size:.78rem;color:var(--text3);margin-top:8px">
-        Commands: /status /pv /battery /today</p>
+        Commands: /info /status /pv /battery /today · Control: /output /charger /float /bulk…</p>
+      <div class="ctrl-row">
+        <div class="ctrl-label"><span>Daily Summary</span>
+          <small>Send energy digest once a day at the time below</small></div>
+        <div class="ctrl-right"><input type="checkbox" id="n-tg-sum"></div>
+      </div>
+      <div class="form-group" style="margin-top:8px">
+        <label>Summary time (24h, Pi local)</label>
+        <input id="n-tg-sum-time" placeholder="21:00" style="max-width:120px">
+      </div>
     </div>
     <!-- Email -->
     <div class="card">
@@ -1263,6 +1281,11 @@ aside#sidebar{display:flex;flex-direction:column}
 </footer>
 
 <script>
+// ── PWA service worker ──────────────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
+
 // ── Socket.IO connection ──────────────────────────────────────────────────
 const socket = io();
 const D = {};   // all data values
@@ -2072,6 +2095,7 @@ async function loadNotify() {
   const ck = (id,key) => { const e=document.getElementById(id); if(e) e.checked = (c[key]||'').toLowerCase()==='true'; };
   const tx = (id,key,def='') => { const e=document.getElementById(id); if(e) e.value = c[key]||def; };
   ck('n-tg-en','telegram_enabled'); tx('n-tg-token','telegram_token'); tx('n-tg-chat','telegram_chat_id');
+  ck('n-tg-sum','telegram_daily_summary'); tx('n-tg-sum-time','telegram_summary_time','21:00');
   ck('n-em-en','email_enabled'); tx('n-em-host','email_smtp_host','smtp.gmail.com');
   tx('n-em-port','email_smtp_port','587'); tx('n-em-user','email_username');
   tx('n-em-from','email_from_addr'); tx('n-em-to','email_to_addr');
@@ -2089,6 +2113,7 @@ async function saveNotify() {
   const C = id => document.getElementById(id).checked ? 'true':'false';
   const body = {
     telegram_enabled: C('n-tg-en'), telegram_chat_id: V('n-tg-chat'),
+    telegram_daily_summary: C('n-tg-sum'), telegram_summary_time: V('n-tg-sum-time'),
     email_enabled: C('n-em-en'), email_smtp_host: V('n-em-host'), email_smtp_port: V('n-em-port'),
     email_username: V('n-em-user'), email_from_addr: V('n-em-from'), email_to_addr: V('n-em-to'),
     alerts_enabled: C('n-al-en'), alerts_low_soc: V('n-al-low'), alerts_critical_soc: V('n-al-crit'),

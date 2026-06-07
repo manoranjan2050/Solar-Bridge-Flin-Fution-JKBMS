@@ -41,6 +41,8 @@ cooldown = 1800            # seconds between repeat alerts for the same conditio
 enabled = false
 token =                    # BotFather token, e.g. 123456:ABC-DEF...
 chat_id =                  # your chat id (message @userinfobot to get it)
+daily_summary = false      # send a once-a-day energy digest
+summary_time = 21:00       # HH:MM (24h, Pi local time) to send it
 
 [email]
 enabled = false
