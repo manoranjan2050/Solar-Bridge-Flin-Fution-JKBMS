@@ -196,6 +196,14 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 .mini-stat .v{font-size:1.15rem;font-weight:700;color:var(--text1)}
 .mini-stat .l{font-size:.7rem;color:var(--text3);margin-top:2px}
 
+/* ── CURRENT-VALUE BADGE (settings page) ── */
+.cur-badge{display:inline-flex;align-items:center;gap:5px;min-width:62px;justify-content:center;
+  padding:5px 10px;border-radius:8px;background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.35);
+  color:var(--battery);font-size:.82rem;font-weight:700;font-variant-numeric:tabular-nums}
+.cur-badge::before{content:'now';font-size:.6rem;font-weight:500;color:var(--text3);text-transform:uppercase}
+.cur-badge.flash{animation:badgeFlash 1s ease}
+@keyframes badgeFlash{0%{background:rgba(245,158,11,.4)}100%{background:rgba(16,185,129,.12)}}
+
 /* ── CELL BARS ── */
 .cells-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:6px}
 .cell-bar{display:flex;flex-direction:column;align-items:center;gap:3px}
@@ -730,15 +738,18 @@ aside#sidebar{display:flex;flex-direction:column}
 
 <!-- SETTINGS PAGE -->
 <div class="page" id="page-settings">
-  <div class="page-title"><i class="fa fa-sliders"></i> Inverter Settings</div>
+  <div class="page-title"><i class="fa fa-sliders"></i> Inverter &amp; Battery Settings</div>
+
+  <!-- ── INVERTER PRIORITY SETTINGS ──────────────────────────────────────── -->
   <div class="card" style="margin-bottom:16px">
-    <div class="card-title"><i class="fa fa-triangle-exclamation" style="color:var(--solar)"></i>
-      Changes take effect immediately on the inverter</div>
+    <div class="card-title"><i class="fa fa-bolt"></i> Power Priority
+      <span class="badge badge-yellow" style="float:right;font-size:.7rem">Changes apply immediately</span></div>
 
     <div class="ctrl-row">
       <div class="ctrl-label"><span>Output Source Priority</span>
         <small>Where inverter gets power to supply the load</small></div>
       <div class="ctrl-right">
+        <span class="cur-badge" id="cv-op">--</span>
         <select id="c-op" onchange="sendCtrl('output_priority',this.value)">
           <option>Grid first</option><option>Solar first</option><option>SBU</option>
         </select>
@@ -747,21 +758,28 @@ aside#sidebar{display:flex;flex-direction:column}
 
     <div class="ctrl-row">
       <div class="ctrl-label"><span>Charger Source Priority</span>
-        <small>What source is used to charge the battery</small></div>
+        <small>What source charges the battery</small></div>
       <div class="ctrl-right">
+        <span class="cur-badge" id="cv-cp">--</span>
         <select id="c-cp" onchange="sendCtrl('charger_priority',this.value)">
           <option>Grid first</option><option>Solar first</option>
           <option>Solar+Grid</option><option>Solar only</option>
         </select>
       </div>
     </div>
+  </div>
+
+  <!-- ── CHARGE CURRENT SETTINGS ─────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title"><i class="fa fa-bolt-lightning"></i> Charge Current Limits</div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label"><span>Max Charge Current</span>
-        <small>Total max charge current (solar + grid)</small></div>
+      <div class="ctrl-label"><span>Max Total Charge Current</span>
+        <small>Solar + Grid combined charge limit</small></div>
       <div class="ctrl-right">
-        <input type="number" id="c-mc" min="10" max="120" step="10" placeholder="80">
-        <button class="btn btn-primary btn-sm" onclick="sendCtrlInput('max_charge_current','c-mc')">Set</button>
+        <span class="cur-badge" id="cv-mc">--</span>
+        <input type="number" id="c-mc" min="10" max="120" step="10" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('max_charge_current','c-mc','cv-mc','A')">Set</button>
       </div>
     </div>
 
@@ -769,46 +787,132 @@ aside#sidebar{display:flex;flex-direction:column}
       <div class="ctrl-label"><span>Max Grid Charge Current</span>
         <small>Max current drawn from grid for charging</small></div>
       <div class="ctrl-right">
-        <input type="number" id="c-gc" min="2" max="60" step="2" placeholder="20">
-        <button class="btn btn-primary btn-sm" onclick="sendCtrlInput('max_grid_charge_current','c-gc')">Set</button>
+        <span class="cur-badge" id="cv-gc">--</span>
+        <input type="number" id="c-gc" min="2" max="60" step="2" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('max_grid_charge_current','c-gc','cv-gc','A')">Set</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── BATTERY VOLTAGE SETTINGS ────────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title"><i class="fa fa-battery-three-quarters"></i> Battery Voltage Settings
+      <span style="font-size:.75rem;color:var(--text3);font-weight:400;margin-left:8px">LiFePO4 recommended ranges shown</span></div>
+
+    <div class="ctrl-row">
+      <div class="ctrl-label"><span>Bulk / Absorption Voltage</span>
+        <small>Target during bulk charge (LiFePO4: 54.4–57.6V)</small></div>
+      <div class="ctrl-right">
+        <span class="cur-badge" id="cv-bv">--</span>
+        <input type="number" id="c-bv" min="44" max="58.4" step="0.1" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('battery_bulk_voltage','c-bv','cv-bv','V')">Set</button>
       </div>
     </div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label"><span>Battery Float Voltage</span>
-        <small>Voltage to maintain after full charge</small></div>
+      <div class="ctrl-label"><span>Float Voltage</span>
+        <small>Maintain after full charge (LiFePO4: 53.2–54.4V)</small></div>
       <div class="ctrl-right">
-        <input type="number" id="c-fv" min="44" max="58.4" step="0.1" placeholder="54.0">
-        <button class="btn btn-primary btn-sm" onclick="sendCtrlInput('battery_float_voltage','c-fv')">Set</button>
+        <span class="cur-badge" id="cv-fv">--</span>
+        <input type="number" id="c-fv" min="44" max="58.4" step="0.1" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('battery_float_voltage','c-fv','cv-fv','V')">Set</button>
       </div>
     </div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label"><span>Battery Bulk/Absorption Voltage</span>
-        <small>Target voltage during bulk charging phase</small></div>
+      <div class="ctrl-label"><span>Shutdown / Low Battery Cutoff</span>
+        <small>Inverter cuts off at this voltage (LiFePO4: 44–48V)</small></div>
       <div class="ctrl-right">
-        <input type="number" id="c-bv" min="44" max="58.4" step="0.1" placeholder="55.1">
-        <button class="btn btn-primary btn-sm" onclick="sendCtrlInput('battery_bulk_voltage','c-bv')">Set</button>
+        <span class="cur-badge" id="cv-sv">--</span>
+        <input type="number" id="c-sv" min="40" max="52" step="0.1" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('battery_shutdown_voltage','c-sv','cv-sv','V')">Set</button>
       </div>
     </div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label"><span>Battery Shutdown Voltage</span>
-        <small>Voltage at which inverter cuts battery power</small></div>
+      <div class="ctrl-label"><span>Back-to-Grid / Recharge Voltage</span>
+        <small>Switches back to grid when battery drops here</small></div>
       <div class="ctrl-right">
-        <input type="number" id="c-sv" min="40" max="50" step="0.1" placeholder="48.0">
-        <button class="btn btn-primary btn-sm" onclick="sendCtrlInput('battery_shutdown_voltage','c-sv')">Set</button>
+        <span class="cur-badge" id="cv-bkv">--</span>
+        <input type="number" id="c-bkv" min="40" max="52" step="0.1" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('battery_recharge_voltage','c-bkv','cv-bkv','V')">Set</button>
       </div>
     </div>
 
     <div class="ctrl-row">
-      <div class="ctrl-label"><span>Back-to-Grid Voltage</span>
-        <small>Battery voltage at which grid resumes</small></div>
+      <div class="ctrl-label"><span>Re-discharge Voltage</span>
+        <small>Discharge to battery again after this voltage when on grid</small></div>
       <div class="ctrl-right">
-        <input type="number" id="c-bkv" min="40" max="52" step="0.1" placeholder="46.0">
-        <button class="btn btn-primary btn-sm" onclick="sendCtrlInput('battery_recharge_voltage','c-bkv')">Set</button>
+        <span class="cur-badge" id="cv-rdv">--</span>
+        <input type="number" id="c-rdv" min="44" max="58.4" step="0.1" placeholder="--">
+        <button class="btn btn-primary btn-sm" onclick="setCtrl('battery_redischarge_voltage','c-rdv','cv-rdv','V')">Set</button>
       </div>
     </div>
+  </div>
+
+  <!-- ── BMS / BATTERY LIVE STATUS ───────────────────────────────────────── -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title"><i class="fa fa-microchip"></i> Battery BMS — Live Status
+      <span style="font-size:.75rem;color:var(--text3);font-weight:400;margin-left:8px">(JK BMS read-only via RS485)</span></div>
+
+    <div class="grid g2">
+      <!-- BMS 1 -->
+      <div>
+        <div style="font-size:.78rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+          <i class="fa fa-battery-full" style="color:var(--battery)"></i> BMS 1</div>
+        <div class="info-row"><span class="lbl">Pack Voltage</span><span class="val" id="bs-b1v">-- V</span></div>
+        <div class="info-row"><span class="lbl">State of Charge</span><span class="val" id="bs-b1soc">-- %</span></div>
+        <div class="info-row"><span class="lbl">Remaining Cap</span><span class="val" id="bs-b1rem">-- Ah</span></div>
+        <div class="info-row"><span class="lbl">Design Cap</span><span class="val" id="bs-b1des">-- Ah</span></div>
+        <div class="info-row"><span class="lbl">State of Health</span><span class="val" id="bs-b1soh">-- %</span></div>
+        <div class="info-row"><span class="lbl">Cycle Count</span><span class="val" id="bs-b1cy">--</span></div>
+        <div class="info-row"><span class="lbl">Cell Voltage Min</span><span class="val" id="bs-b1cmin">-- V</span></div>
+        <div class="info-row"><span class="lbl">Cell Voltage Max</span><span class="val" id="bs-b1cmax">-- V</span></div>
+        <div class="info-row"><span class="lbl">Cell Imbalance</span><span class="val" id="bs-b1cdiff">-- mV</span></div>
+        <div class="info-row"><span class="lbl">Temp T1 / T2</span><span class="val" id="bs-b1t">-- / -- °C</span></div>
+        <div class="info-row"><span class="lbl">MOS Temp</span><span class="val" id="bs-b1mos">-- °C</span></div>
+      </div>
+      <!-- BMS 2 -->
+      <div>
+        <div style="font-size:.78rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+          <i class="fa fa-battery-full" style="color:var(--battery)"></i> BMS 2</div>
+        <div class="info-row"><span class="lbl">Pack Voltage</span><span class="val" id="bs-b2v">-- V</span></div>
+        <div class="info-row"><span class="lbl">State of Charge</span><span class="val" id="bs-b2soc">-- %</span></div>
+        <div class="info-row"><span class="lbl">Remaining Cap</span><span class="val" id="bs-b2rem">-- Ah</span></div>
+        <div class="info-row"><span class="lbl">Design Cap</span><span class="val" id="bs-b2des">-- Ah</span></div>
+        <div class="info-row"><span class="lbl">State of Health</span><span class="val" id="bs-b2soh">-- %</span></div>
+        <div class="info-row"><span class="lbl">Cycle Count</span><span class="val" id="bs-b2cy">--</span></div>
+        <div class="info-row"><span class="lbl">Cell Voltage Min</span><span class="val" id="bs-b2cmin">-- V</span></div>
+        <div class="info-row"><span class="lbl">Cell Voltage Max</span><span class="val" id="bs-b2cmax">-- V</span></div>
+        <div class="info-row"><span class="lbl">Cell Imbalance</span><span class="val" id="bs-b2cdiff">-- mV</span></div>
+        <div class="info-row"><span class="lbl">Temp T1 / T2</span><span class="val" id="bs-b2t">-- / -- °C</span></div>
+        <div class="info-row"><span class="lbl">MOS Temp</span><span class="val" id="bs-b2mos">-- °C</span></div>
+      </div>
+    </div>
+
+    <!-- Battery Bank combined -->
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:.78rem;color:var(--text3);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">
+        <i class="fa fa-battery-full" style="color:var(--solar)"></i> Combined Bank (200 Ah parallel)</div>
+      <div class="grid g4" style="gap:10px">
+        <div class="mini-stat"><div class="v" id="bs-bkv">-- V</div><div class="l">Pack Voltage</div></div>
+        <div class="mini-stat"><div class="v" id="bs-bksoc" style="color:var(--battery)">-- %</div><div class="l">Bank SOC</div></div>
+        <div class="mini-stat"><div class="v" id="bs-bkrem">-- Ah</div><div class="l">Remaining</div></div>
+        <div class="mini-stat"><div class="v" id="bs-bksoh">-- %</div><div class="l">State of Health</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- note: JK BMS write protocol not implemented (passive RS485 monitor only) -->
+  <div class="card" style="background:rgba(59,130,246,.06);border-color:rgba(59,130,246,.25)">
+    <div class="card-title"><i class="fa fa-circle-info" style="color:var(--grid)"></i> About BMS Control</div>
+    <p style="font-size:.83rem;color:var(--text2);line-height:1.7">
+      The JK BMS is connected in <b>passive read-only mode</b> (RS485 broadcast).
+      Charge/discharge behaviour is controlled through the <b>Inverter settings above</b> —
+      setting the bulk/float/cutoff voltages here tells the inverter how to treat the battery.
+      Direct BMS parameter writing (cell balance thresholds, protection limits) requires the
+      JK active command protocol and is not currently implemented.
+    </p>
   </div>
 </div>
 
@@ -1336,6 +1440,7 @@ function showPage(id) {
   if (id === 'history') loadHistory();
   if (id === 'details') loadDetails();
   if (id === 'solar')   loadSolarToday();
+  if (id === 'settings') { refreshState(); syncSettingsInputs(); }
   if (id === 'alerts')  loadAlerts();
   if (id === 'automation') { loadRules(); arActionOpts(); }
   if (id === 'notifications') loadNotify();
@@ -1600,24 +1705,47 @@ function updateCells(containerId, prefix, bmsNum) {
 }
 
 function syncSettingsInputs() {
-  const setVal = (id, key) => {
+  // selects: reflect the inverter's current value
+  const op = D['inverter_control_output_priority'] || D['inverter_output_source_priority'];
+  const cp = D['inverter_control_charger_priority'] || D['inverter_charger_source_priority'];
+  const opSel = document.getElementById('c-op'); if (opSel && op) opSel.value = op;
+  const cpSel = document.getElementById('c-cp'); if (cpSel && cp) cpSel.value = cp;
+
+  // "now" badges — always show the inverter's actual current value
+  const badge = (id, val, unit='') => {
     const el = document.getElementById(id);
-    if (el && D[key] !== undefined) {
-      if (el.tagName === 'SELECT') {
-        const v = D[key]; if (v) el.value = v;
-      } else {
-        if (!el.value) el.placeholder = D[key];
-      }
-    }
+    if (el && val !== undefined && val !== null && val !== '') el.textContent = val + unit;
   };
-  setVal('c-op', 'inverter_control_output_priority');
-  setVal('c-cp', 'inverter_control_charger_priority');
-  setVal('c-mc', 'inverter_max_charge_current');
-  setVal('c-gc', 'inverter_max_ac_charge_current');
-  setVal('c-fv', 'inverter_battery_float_voltage');
-  setVal('c-bv', 'inverter_battery_bulk_voltage');
-  setVal('c-sv', 'inverter_battery_cutoff_voltage');
-  setVal('c-bkv','inverter_battery_back_voltage');
+  badge('cv-op', op); badge('cv-cp', cp);
+  badge('cv-mc',  f(D['inverter_max_charge_current'],0),    'A');
+  badge('cv-gc',  f(D['inverter_max_ac_charge_current'],0), 'A');
+  badge('cv-bv',  f(D['inverter_battery_bulk_voltage'],1),  'V');
+  badge('cv-fv',  f(D['inverter_battery_float_voltage'],1), 'V');
+  badge('cv-sv',  f(D['inverter_battery_cutoff_voltage'],1),'V');
+  badge('cv-bkv', f(D['inverter_battery_back_voltage'],1),  'V');
+  badge('cv-rdv', f(D['inverter_battery_redischarge_voltage'],1), 'V');
+
+  // BMS live status (read-only)
+  const bv=(id,val)=>{const e=document.getElementById(id); if(!e||val===undefined||val===null) return;
+    e.textContent=String(val).replace(/-?null|-?undefined|-?NaN/g,'--');};
+  for (const n of ['1','2']) {
+    bv(`bs-b${n}v`,    f(D[`bms${n}_battery_voltage`],2)+' V');
+    bv(`bs-b${n}soc`,  pct(D[`bms${n}_battery_soc`])+' %');
+    bv(`bs-b${n}rem`,  f(D[`bms${n}_remaining_capacity_ah`],1)+' Ah');
+    bv(`bs-b${n}des`,  f(D[`bms${n}_design_capacity_ah`],1)+' Ah');
+    bv(`bs-b${n}soh`,  f(D[`bms${n}_state_of_health`],0)+' %');
+    bv(`bs-b${n}cy`,   D[`bms${n}_battery_cycles`]);
+    bv(`bs-b${n}cmin`, f(D[`bms${n}_cell_voltage_min`],3)+' V');
+    bv(`bs-b${n}cmax`, f(D[`bms${n}_cell_voltage_max`],3)+' V');
+    const diff = D[`bms${n}_cell_voltage_diff`];
+    bv(`bs-b${n}cdiff`, diff!==undefined ? Math.round(diff*1000)+' mV' : '--');
+    bv(`bs-b${n}t`,    f(D[`bms${n}_temp_battery_1`],1)+' / '+f(D[`bms${n}_temp_battery_2`],1)+' °C');
+    bv(`bs-b${n}mos`,  f(D[`bms${n}_temp_mos`],1)+' °C');
+  }
+  bv('bs-bkv',   f(D['bank_battery_voltage'],2)+' V');
+  bv('bs-bksoc', pct(D['bank_battery_soc'])+' %');
+  bv('bs-bkrem', f(D['bank_total_remaining_capacity'],1)+' Ah');
+  bv('bs-bksoh', f(D['bank_state_of_health'],0)+' %');
 }
 
 // ── Controls ──────────────────────────────────────────────────────────────
@@ -1626,9 +1754,23 @@ async function sendCtrl(key, value) {
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({key, value})});
   const j = await r.json();
-  toast(j.ok ? `✓ ${key} = ${value}` : `✗ ${j.error}`, j.ok ? 'ok' : 'err');
+  toast(j.ok ? `Sent: ${key.replace(/_/g,' ')} = ${value}` : `Failed: ${j.error||''}`, j.ok ? 'ok' : 'err');
+  return j.ok;
 }
-function sendCtrlInput(key, inputId) {
+// numeric set: send value, flash the badge, clear the input
+async function setCtrl(key, inputId, badgeId, unit='') {
+  const inp = document.getElementById(inputId);
+  const val = inp.value.trim();
+  if (val === '') { toast('Enter a value first','err'); return; }
+  const ok = await sendCtrl(key, val);
+  if (ok) {
+    const b = document.getElementById(badgeId);
+    if (b) { b.textContent = val + unit; b.classList.add('flash'); setTimeout(()=>b.classList.remove('flash'),1000); }
+    inp.value = '';                 // clear so it doesn't look "stuck"
+    toast('Applied — inverter confirming...','ok');
+  }
+}
+function sendCtrlInput(key, inputId) {   // legacy compat
   const val = document.getElementById(inputId).value;
   if (val) sendCtrl(key, val);
 }

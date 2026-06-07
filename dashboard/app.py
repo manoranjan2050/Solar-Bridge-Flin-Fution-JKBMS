@@ -227,11 +227,8 @@ def api_control():
     val  = body.get("value","")
     if not key:
         return jsonify({"ok": False, "error": "missing key"}), 400
-    # 1) publish over MQTT if connected (instant)
-    if _mqtt:
-        try: _mqtt.publish(f"solar/inverter/control/{key}/set", str(val))
-        except Exception: pass
-    # 2) ALSO append to a queue file the bridge polls — works even when MQTT is down
+    # Append to the queue file the bridge polls — works even when MQTT is down,
+    # and avoids double-applying (HA still controls via its own MQTT publishes).
     try:
         q = []
         if CONTROL_QUEUE.exists():

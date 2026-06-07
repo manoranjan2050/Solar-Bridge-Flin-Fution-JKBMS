@@ -1160,6 +1160,8 @@ def main():
                     if k:
                         log.info("Control (queue): %s = %s", k, v)
                         apply_control(inverter, client, k, str(v))
+                if cmds:
+                    last_qpiri = 0   # force a QPIRI re-read so the dashboard shows the new value fast
 
             # ── Track daily extremes (for the Telegram summary) ──────────
             _pv = latest_state.get("inverter_pv_power")
