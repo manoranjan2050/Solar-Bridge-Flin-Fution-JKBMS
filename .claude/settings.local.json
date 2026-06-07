@@ -1,0 +1,29 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install *)",
+      "Bash(python deploy.py)",
+      "Bash(python -)",
+      "Bash(2>&1)",
+      "Bash(Out-File -Encoding utf8 solar_log.txt)",
+      "Bash(Get-Content solar_log.txt)",
+      "PowerShell(wsl echo \"WSL available\" 2>$null)",
+      "PowerShell(Get-Command python,python3 2>$null)",
+      "PowerShell(pip show disk-image-reader 2>$null)",
+      "Bash(wsl echo *)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(bash -n install_all.sh)",
+      "Bash(bash -n detect_devices.sh)",
+      "Bash(python -c \"import ast; [ast.parse\\(open\\(f\\).read\\(\\)\\) for f in ['solar_bridge.py','solar_db.py','notifier.py','automation.py','dashboard/app.py']]; print\\('all python parse OK'\\)\")",
+      "Bash(python -c \"import flask, flask_socketio, paho.mqtt.client; print\\('deps present'\\)\")",
+      "Bash(python -m pip install --quiet flask flask-socketio paho-mqtt requests)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(python -c ' *)",
+      "Bash(timeout 8 python dashboard/app.py)",
+      "Bash(taskkill //F //IM python.exe)",
+      "Bash(rm -f solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm energy.json)",
+      "Bash(cp /tmp/config.bak config.ini)",
+      "Bash(rm -f solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm energy.json automation.json)"
+    ]
+  }
+}

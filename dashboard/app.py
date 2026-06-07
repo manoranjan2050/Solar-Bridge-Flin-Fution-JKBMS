@@ -1,0 +1,416 @@
+#!/usr/bin/env python3
+"""Solar Bridge Dashboard — Flask + WebSocket backend."""
+
+import configparser, json, os, subprocess, sys, threading, time
+from functools import wraps
+from pathlib import Path
+from flask import (Flask, render_template, request, jsonify,
+                   session, redirect, url_for)
+from flask_socketio import SocketIO
+import paho.mqtt.client as mqtt
+
+BASE      = Path(__file__).parent
+CFG_PATH  = BASE.parent / "config.ini"
+NRG_PATH  = BASE.parent / "energy.json"
+
+# Allow importing the bridge's add-on modules (history DB, automation)
+sys.path.insert(0, str(BASE.parent))
+try:
+    from solar_db import db
+except Exception:
+    db = None
+try:
+    import automation as automation_mod
+except Exception:
+    automation_mod = None
+
+app       = Flask(__name__)
+app.config["SECRET_KEY"] = "solar-bridge-2024"
+socketio  = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
+
+# ── Authentication ─────────────────────────────────────────────────────────
+def auth_creds():
+    """Return (username, password) from config; password '' means no login."""
+    load_cfg()
+    return (cfg.get("dashboard", "username", fallback="admin").split("#")[0].strip(),
+            cfg.get("dashboard", "password", fallback="").split("#")[0].strip())
+
+def login_required(f):
+    @wraps(f)
+    def wrapper(*a, **kw):
+        _, pwd = auth_creds()
+        if pwd and not session.get("auth"):
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "auth required"}), 401
+            return redirect(url_for("login"))
+        return f(*a, **kw)
+    return wrapper
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    user, pwd = auth_creds()
+    if not pwd:
+        return redirect(url_for("index"))
+    if request.method == "POST":
+        body = request.form
+        if body.get("username") == user and body.get("password") == pwd:
+            session["auth"] = True
+            return redirect(url_for("index"))
+        return render_template("login.html", error="Invalid credentials")
+    return render_template("login.html", error=None)
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+
+# ── In-memory state ──────────────────────────────────────────────────────────
+state   = {}          # topic_key → value
+cfg     = configparser.ConfigParser(interpolation=None)
+_mqtt   = None
+
+def load_cfg():
+    cfg.read(CFG_PATH)
+
+def save_cfg():
+    with open(CFG_PATH, "w") as f:
+        cfg.write(f)
+
+def topic_key(topic: str) -> str:
+    return topic.replace("solar/", "").replace("/", "_")
+
+# ── MQTT ─────────────────────────────────────────────────────────────────────
+def mqtt_on_message(client, userdata, msg):
+    key   = topic_key(msg.topic)
+    raw   = msg.payload.decode(errors="ignore").strip()
+    try:    val = float(raw)
+    except: val = raw
+    state[key] = val
+    socketio.emit("update", {"k": key, "v": raw})
+
+def mqtt_on_connect(client, userdata, flags, rc, props=None):
+    client.subscribe("solar/#")
+    socketio.emit("bridge_status", {"connected": rc == 0})
+
+def start_mqtt():
+    global _mqtt
+    load_cfg()
+    host  = cfg.get("mqtt", "host", fallback="localhost").split("#")[0].strip()
+    port  = int(cfg.get("mqtt", "port", fallback="1883").split("#")[0].strip())
+    user  = cfg.get("mqtt", "username", fallback="").split("#")[0].strip()
+    pwd   = cfg.get("mqtt", "password", fallback="").split("#")[0].strip()
+
+    _mqtt = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="solar_dash")
+    if user: _mqtt.username_pw_set(user, pwd or None)
+    _mqtt.on_connect = mqtt_on_connect
+    _mqtt.on_message = mqtt_on_message
+    try:
+        _mqtt.connect(host, port, keepalive=30)
+        _mqtt.loop_start()
+    except Exception as e:
+        print(f"MQTT connect failed: {e}")
+
+# ── Routes ────────────────────────────────────────────────────────────────────
+@app.route("/")
+@login_required
+def index():
+    _, pwd = auth_creds()
+    return render_template("index.html", auth_enabled=bool(pwd))
+
+@app.route("/api/state")
+def api_state():
+    nrg = {}
+    try: nrg = json.loads(NRG_PATH.read_text())
+    except: pass
+    return jsonify({**state, **{f"energy_{k}": v for k, v in nrg.items()}})
+
+@app.route("/api/config")
+def api_config():
+    load_cfg()
+    return jsonify({
+        "mqtt_host":     cfg.get("mqtt","host","fallback","").split("#")[0].strip(),
+        "mqtt_port":     cfg.get("mqtt","port",fallback="1883").split("#")[0].strip(),
+        "mqtt_user":     cfg.get("mqtt","username",fallback="").split("#")[0].strip(),
+        "inv_port":      cfg.get("inverter","port",fallback="/dev/hidraw0").split("#")[0].strip(),
+        "inv_interval":  cfg.get("inverter","poll_interval",fallback="10").split("#")[0].strip(),
+        "bms_port":      cfg.get("jkbms","port",fallback="/dev/ttyUSB0").split("#")[0].strip(),
+        "bms_baud":      cfg.get("jkbms","baud",fallback="115200").split("#")[0].strip(),
+        "bms_cells":     cfg.get("jkbms","cell_count",fallback="16").split("#")[0].strip(),
+    })
+
+@app.route("/api/config", methods=["POST"])
+@login_required
+def api_config_save():
+    body = request.json or {}
+    load_cfg()
+    mapping = {
+        "mqtt_host":    ("mqtt","host"),
+        "mqtt_port":    ("mqtt","port"),
+        "mqtt_user":    ("mqtt","username"),
+        "mqtt_pass":    ("mqtt","password"),
+        "inv_port":     ("inverter","port"),
+        "inv_interval": ("inverter","poll_interval"),
+        "bms_port":     ("jkbms","port"),
+        "bms_baud":     ("jkbms","baud"),
+        "bms_cells":    ("jkbms","cell_count"),
+    }
+    for key, (section, opt) in mapping.items():
+        if key in body:
+            if not cfg.has_section(section): cfg.add_section(section)
+            cfg.set(section, opt, str(body[key]))
+    save_cfg()
+    return jsonify({"ok": True})
+
+@app.route("/api/control", methods=["POST"])
+@login_required
+def api_control():
+    body = request.json or {}
+    key  = body.get("key","")
+    val  = body.get("value","")
+    if _mqtt and key:
+        _mqtt.publish(f"solar/inverter/control/{key}/set", str(val))
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "MQTT not connected"}), 500
+
+@app.route("/api/wifi/scan")
+def wifi_scan():
+    try:
+        r = subprocess.run(
+            ["nmcli","-t","-f","SSID,SIGNAL,SECURITY","dev","wifi","list","--rescan","yes"],
+            capture_output=True, text=True, timeout=15)
+        nets = []
+        seen = set()
+        for line in r.stdout.splitlines():
+            p = line.split(":")
+            ssid = p[0].strip()
+            if ssid and ssid not in seen:
+                seen.add(ssid)
+                nets.append({"ssid": ssid,
+                             "signal": int(p[1]) if len(p)>1 and p[1].isdigit() else 0,
+                             "security": p[2] if len(p)>2 else "Open"})
+        nets.sort(key=lambda x: x["signal"], reverse=True)
+        return jsonify(nets)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/wifi/connect", methods=["POST"])
+@login_required
+def wifi_connect():
+    body = request.json or {}
+    ssid = body.get("ssid","")
+    pwd  = body.get("password","")
+    try:
+        if pwd:
+            r = subprocess.run(["nmcli","dev","wifi","connect",ssid,"password",pwd],
+                               capture_output=True, text=True, timeout=30)
+        else:
+            r = subprocess.run(["nmcli","dev","wifi","connect",ssid],
+                               capture_output=True, text=True, timeout=30)
+        ok = r.returncode == 0
+        return jsonify({"ok": ok, "msg": (r.stdout or r.stderr).strip()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+@app.route("/api/wifi/status")
+def wifi_status():
+    try:
+        r = subprocess.run(["nmcli","-t","-f","DEVICE,STATE,CONNECTION","dev"],
+                           capture_output=True, text=True)
+        for line in r.stdout.splitlines():
+            p = line.split(":")
+            if len(p) >= 3 and p[1] == "connected":
+                return jsonify({"connected": True, "ssid": p[2], "device": p[0]})
+        return jsonify({"connected": False})
+    except:
+        return jsonify({"connected": False})
+
+@app.route("/api/bluetooth/scan")
+def bt_scan():
+    try:
+        r = subprocess.run(["bluetoothctl","scan","on"],
+                           capture_output=True, text=True, timeout=6)
+        r2 = subprocess.run(["bluetoothctl","devices"],
+                            capture_output=True, text=True)
+        devices = []
+        for line in r2.stdout.splitlines():
+            parts = line.strip().split(" ", 2)
+            if len(parts) == 3:
+                devices.append({"mac": parts[1], "name": parts[2]})
+        return jsonify(devices)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/service/<action>", methods=["POST"])
+@login_required
+def service_action(action):
+    allowed = {"restart", "stop", "start", "status"}
+    if action not in allowed:
+        return jsonify({"ok": False}), 400
+    svc = request.json.get("service", "solar-bridge") if request.json else "solar-bridge"
+    try:
+        r = subprocess.run(["sudo","systemctl", action, svc],
+                           capture_output=True, text=True)
+        return jsonify({"ok": r.returncode == 0, "msg": (r.stdout+r.stderr).strip()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+@app.route("/api/logs")
+def api_logs():
+    try:
+        r = subprocess.run(
+            ["sudo","journalctl","-u","solar-bridge","-n","50","--no-pager","--output=cat"],
+            capture_output=True, text=True)
+        return jsonify({"logs": r.stdout})
+    except Exception as e:
+        return jsonify({"logs": str(e)})
+
+@app.route("/api/sysinfo")
+def api_sysinfo():
+    info = {}
+    try:
+        r = subprocess.run(["vcgencmd","measure_temp"], capture_output=True, text=True)
+        info["cpu_temp"] = r.stdout.replace("temp=","").strip()
+    except: info["cpu_temp"] = "N/A"
+    try:
+        r = subprocess.run(["free","-m"], capture_output=True, text=True)
+        parts = r.stdout.splitlines()[1].split()
+        info["mem_used"] = parts[2]; info["mem_total"] = parts[1]
+    except: pass
+    try:
+        r = subprocess.run(["df","-h","/"], capture_output=True, text=True)
+        parts = r.stdout.splitlines()[1].split()
+        info["disk_used"] = parts[2]; info["disk_total"] = parts[1]; info["disk_pct"] = parts[4]
+    except: pass
+    try:
+        r = subprocess.run(["uptime","-p"], capture_output=True, text=True)
+        info["uptime"] = r.stdout.strip()
+    except: pass
+    return jsonify(info)
+
+# ── History / Energy / Alerts ─────────────────────────────────────────────────
+@app.route("/api/history")
+@login_required
+def api_history():
+    key   = request.args.get("key", "")
+    hours = int(request.args.get("hours", "24"))
+    if not db or not key:
+        return jsonify([])
+    return jsonify(db.get_history(key, hours))
+
+@app.route("/api/today_energy")
+@login_required
+def api_today_energy():
+    if not db:
+        return jsonify({})
+    return jsonify(db.get_today_energy())
+
+@app.route("/api/daily_energy")
+@login_required
+def api_daily_energy():
+    if not db:
+        return jsonify([])
+    return jsonify(db.get_daily_energy(int(request.args.get("days", "7"))))
+
+@app.route("/api/alerts")
+@login_required
+def api_alerts():
+    if not db:
+        return jsonify([])
+    return jsonify(db.get_alerts(int(request.args.get("limit", "30"))))
+
+@app.route("/api/alerts/ack", methods=["POST"])
+@login_required
+def api_alerts_ack():
+    if db:
+        db.ack_alert(int((request.json or {}).get("id", 0)))
+    return jsonify({"ok": True})
+
+# ── Automation rules ───────────────────────────────────────────────────────────
+@app.route("/api/automation")
+@login_required
+def api_automation_get():
+    if not automation_mod:
+        return jsonify([])
+    return jsonify(automation_mod.load_rules())
+
+@app.route("/api/automation", methods=["POST"])
+@login_required
+def api_automation_save():
+    if not automation_mod:
+        return jsonify({"ok": False, "error": "automation module unavailable"}), 500
+    rules = request.json
+    if not isinstance(rules, list):
+        return jsonify({"ok": False, "error": "expected a list of rules"}), 400
+    automation_mod.save_rules(rules)
+    # Ask the bridge to reload by bouncing the service (rules are read at start)
+    try:
+        subprocess.run(["sudo", "systemctl", "restart", "solar-bridge"], timeout=15)
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+# ── Notification / alert config ────────────────────────────────────────────────
+NOTIFY_FIELDS = {
+    "telegram": ["enabled", "token", "chat_id"],
+    "email":    ["enabled", "smtp_host", "smtp_port", "username", "from_addr", "to_addr"],
+    "alerts":   ["enabled", "low_soc", "critical_soc", "high_battery_temp",
+                 "high_inverter_temp", "high_cell_diff", "notify_on_grid_loss",
+                 "notify_on_fault", "cooldown"],
+}
+
+@app.route("/api/notify_config")
+@login_required
+def api_notify_get():
+    load_cfg()
+    out = {}
+    for section, keys in NOTIFY_FIELDS.items():
+        for k in keys:
+            out[f"{section}_{k}"] = cfg.get(section, k, fallback="").split("#")[0].strip()
+    return jsonify(out)
+
+@app.route("/api/notify_config", methods=["POST"])
+@login_required
+def api_notify_save():
+    body = request.json or {}
+    load_cfg()
+    for section, keys in NOTIFY_FIELDS.items():
+        if not cfg.has_section(section):
+            cfg.add_section(section)
+        for k in keys:
+            field = f"{section}_{k}"
+            if field in body:
+                cfg.set(section, k, str(body[field]))
+        # password fields only updated when non-empty (so we don't wipe them)
+    if body.get("telegram_token_changed") and "telegram_token" in body:
+        cfg.set("telegram", "token", str(body["telegram_token"]))
+    if body.get("email_password"):
+        cfg.set("email", "password", str(body["email_password"]))
+    save_cfg()
+    try:
+        subprocess.run(["sudo", "systemctl", "restart", "solar-bridge"], timeout=15)
+    except Exception:
+        pass
+    return jsonify({"ok": True})
+
+@app.route("/api/test_alert", methods=["POST"])
+@login_required
+def api_test_alert():
+    """Send a test alert through every enabled channel (Telegram / e-mail / HA)."""
+    try:
+        from notifier import Notifier
+        load_cfg()
+        Notifier(cfg, _mqtt).send("info", "✅ Test alert from Solar Bridge dashboard")
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ── SocketIO events ──────────────────────────────────────────────────────────
+@socketio.on("connect")
+def on_connect():
+    socketio.emit("full_state", state)
+
+if __name__ == "__main__":
+    load_cfg()
+    threading.Thread(target=start_mqtt, daemon=True).start()
+    time.sleep(1)
+    socketio.run(app, host="0.0.0.0", port=8080, debug=False, allow_unsafe_werkzeug=True)

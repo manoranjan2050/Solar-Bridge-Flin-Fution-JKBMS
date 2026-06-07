@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Solar Bridge — Login</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<style>
+:root{--bg0:#0a0f1e;--bg2:#1a2234;--border:#2a3a55;--text1:#e2e8f0;--text2:#94a3b8;--solar:#f59e0b;}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg0);color:var(--text1);
+  min-height:100vh;display:flex;align-items:center;justify-content:center}
+.box{background:var(--bg2);border:1px solid var(--border);border-radius:16px;padding:38px 34px;
+  width:340px;box-shadow:0 8px 40px rgba(0,0,0,.5)}
+.logo{text-align:center;font-size:2.4rem;color:var(--solar);margin-bottom:8px}
+h1{font-size:1.25rem;text-align:center;margin-bottom:24px;font-weight:600}
+label{display:block;font-size:.8rem;color:var(--text2);margin:14px 0 6px}
+input{width:100%;padding:11px 12px;background:#0e1626;border:1px solid var(--border);
+  border-radius:8px;color:var(--text1);font-size:.95rem}
+input:focus{outline:none;border-color:var(--solar)}
+button{width:100%;margin-top:22px;padding:12px;background:var(--solar);color:#1a1200;
+  border:none;border-radius:8px;font-weight:700;font-size:.95rem;cursor:pointer}
+button:hover{filter:brightness(1.08)}
+.err{margin-top:14px;color:#f43f5e;font-size:.85rem;text-align:center}
+</style>
+</head>
+<body>
+<form class="box" method="POST" action="/login">
+  <div class="logo"><i class="fa fa-solar-panel"></i></div>
+  <h1>Solar Bridge</h1>
+  <label>Username</label>
+  <input name="username" autofocus autocomplete="username">
+  <label>Password</label>
+  <input name="password" type="password" autocomplete="current-password">
+  <button type="submit">Sign In</button>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+</form>
+</body>
+</html>

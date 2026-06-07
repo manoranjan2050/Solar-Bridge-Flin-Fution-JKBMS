@@ -1,0 +1,20 @@
+2026-06-07 09:40:40,422 INFO solar_bridge: BMS: 53.27V  SOC=46%  T1=33.7 T2=34.2 MOS=35.1  cells=16  remain=616.3Ah  cycles=100
+Stopping solar-bridge.service - Solar Bridge — Inverter + JKBMS to MQTT...
+solar-bridge.service: Deactivated successfully.
+Stopped solar-bridge.service - Solar Bridge — Inverter + JKBMS to MQTT.
+Started solar-bridge.service - Solar Bridge — Inverter + JKBMS to MQTT.
+2026-06-07 09:40:43,805 INFO solar_bridge: Energy loaded: {'pv_kwh': 3.13, 'batt_in_kwh': 1.01, 'batt_out_kwh': 0.62, 'load_kwh': 2.48, 'grid_in_kwh': 1.11, 'grid_out_kwh': 0.0}
+2026-06-07 09:40:43,812 INFO solar_bridge: MQTT connected to 192.168.1.82:1883
+2026-06-07 09:40:43,817 INFO solar_bridge: Inverter HA discovery published (34 sensors + controls)
+2026-06-07 09:40:43,824 INFO solar_bridge: BMS HA discovery published (BMS1 + BMS2 + Battery Bank)
+2026-06-07 09:40:43,877 INFO solar_bridge: Inverter opened on /dev/hidraw0
+2026-06-07 09:40:46,202 INFO solar_bridge: JKBMS opened on /dev/ttyUSB0 @ 115200 (0 header(s) in probe)
+2026-06-07 09:40:46,442 INFO solar_bridge: Polling loop started
+2026-06-07 09:40:46,986 INFO solar_bridge: Inverter: PV=2795W (340.9V 8.2A)  Load=1439W  Grid=0W  Batt=53.4V 22.0A
+2026-06-07 09:40:47,482 INFO solar_bridge: QPIRI raw fields: 0=220.0 | 1=22.7 | 2=220.0 | 3=50.0 | 4=22.7 | 5=5000 | 6=5000 | 7=48.0 | 8=46.0 | 9=48.0 | 10=55.1 | 11=54.0 | 12=2 | 13=20 | 14=080 | 15=0 | 16=0 | 17=1 | 18=1 | 19=01 | 20=0 | 21=0 | 22=54.0 | 23=0 | 24=1L
+2026-06-07 09:40:47,483 INFO solar_bridge: QPIRI: out_pri=Grid first chg_pri=Grid first max_chg=80A float=54.0V
+2026-06-07 09:40:51,551 WARNING solar_bridge: JKBMS: no type-02 frames found in 220 bytes
+2026-06-07 09:40:53,205 INFO solar_bridge: JKBMS opened on /dev/ttyUSB0 @ 115200 (1 header(s) in probe)
+2026-06-07 09:40:57,733 INFO solar_bridge: Inverter: PV=2762W (336.8V 8.2A)  Load=1457W  Grid=0W  Batt=53.4V 21.0A
+2026-06-07 09:41:00,219 INFO solar_bridge: BMS1: 53.3V SOC=46% T=35.1°C cy=100  BMS2: 53.27V SOC=36% T=36.2°C cy=100  BANK: 53.28V SOC=41% rem=1147Ah
+2026-06-07 09:41:07,829 INFO solar_bridge: Inverter: PV=2654W (335.9V 7.9A)  Load=1502W  Grid=0W  Batt=53.3V 17.0A

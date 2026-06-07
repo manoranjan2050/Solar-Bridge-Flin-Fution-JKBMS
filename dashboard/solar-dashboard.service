@@ -1,0 +1,17 @@
+[Unit]
+Description=Solar Bridge Dashboard (Web UI)
+After=network-online.target solar-bridge.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=manoranjan
+WorkingDirectory=/opt/solar-bridge/dashboard
+ExecStart=/opt/solar-bridge/venv/bin/python /opt/solar-bridge/dashboard/app.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

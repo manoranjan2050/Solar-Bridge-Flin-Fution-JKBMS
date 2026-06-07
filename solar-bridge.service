@@ -1,0 +1,20 @@
+[Unit]
+Description=Solar Bridge — Inverter + JKBMS to MQTT
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/opt/solar-bridge
+ExecStart=/opt/solar-bridge/venv/bin/python /opt/solar-bridge/solar_bridge.py
+Restart=on-failure
+RestartSec=15
+StandardOutput=journal
+StandardError=journal
+
+# Allow access to USB/HID devices
+SupplementaryGroups=dialout plugdev
+
+[Install]
+WantedBy=multi-user.target

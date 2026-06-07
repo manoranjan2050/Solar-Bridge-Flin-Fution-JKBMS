@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "solar-dashboard-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "7800", "--directory", "dashboard/templates"],
+      "port": 7800
+    }
+  ]
+}

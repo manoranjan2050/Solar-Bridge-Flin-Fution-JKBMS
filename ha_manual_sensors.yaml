@@ -1,0 +1,109 @@
+# Paste into your Home Assistant configuration.yaml under the 'mqtt:' section
+# (Only needed if auto-discovery doesn't work — it should work automatically)
+
+mqtt:
+  sensor:
+    # ── Inverter sensors ──────────────────────────────────────────────────────
+    - name: "Grid Voltage"
+      state_topic: "solar/inverter/grid_voltage"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "PV Input Voltage"
+      state_topic: "solar/inverter/pv_input_voltage"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "PV Input Current"
+      state_topic: "solar/inverter/pv_input_current"
+      unit_of_measurement: "A"
+      device_class: current
+
+    - name: "AC Output Active Power"
+      state_topic: "solar/inverter/ac_out_active_power"
+      unit_of_measurement: "W"
+      device_class: power
+
+    - name: "Load Percent"
+      state_topic: "solar/inverter/load_percent"
+      unit_of_measurement: "%"
+
+    - name: "Inverter Battery Voltage"
+      state_topic: "solar/inverter/battery_voltage"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "Battery Charge Current"
+      state_topic: "solar/inverter/battery_charge_current"
+      unit_of_measurement: "A"
+      device_class: current
+
+    - name: "Battery Discharge Current"
+      state_topic: "solar/inverter/battery_discharge_current"
+      unit_of_measurement: "A"
+      device_class: current
+
+    - name: "Battery Capacity (Inverter)"
+      state_topic: "solar/inverter/battery_capacity"
+      unit_of_measurement: "%"
+      device_class: battery
+
+    - name: "Inverter Heatsink Temp"
+      state_topic: "solar/inverter/inverter_heat_sink_temp"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    # ── JKBMS sensors ─────────────────────────────────────────────────────────
+    - name: "BMS Battery Voltage"
+      state_topic: "solar/bms/battery_voltage"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "BMS Battery Current"
+      state_topic: "solar/bms/battery_current"
+      unit_of_measurement: "A"
+      device_class: current
+
+    - name: "BMS Battery Power"
+      state_topic: "solar/bms/battery_power"
+      unit_of_measurement: "W"
+      device_class: power
+
+    - name: "BMS State of Charge"
+      state_topic: "solar/bms/battery_soc"
+      unit_of_measurement: "%"
+      device_class: battery
+
+    - name: "Battery Cycles"
+      state_topic: "solar/bms/battery_cycles"
+
+    - name: "Cell Voltage Min"
+      state_topic: "solar/bms/cell_voltage_min"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "Cell Voltage Max"
+      state_topic: "solar/bms/cell_voltage_max"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "Cell Voltage Difference"
+      state_topic: "solar/bms/cell_voltage_diff"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - name: "BMS Mosfet Temp"
+      state_topic: "solar/bms/temp_power_tube"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "Battery Temperature 1"
+      state_topic: "solar/bms/temp_battery_1"
+      unit_of_measurement: "°C"
+      device_class: temperature
+
+    - name: "BMS Warning"
+      state_topic: "solar/bms/warning"
+
+    - name: "BMS Balancing"
+      state_topic: "solar/bms/balancing"

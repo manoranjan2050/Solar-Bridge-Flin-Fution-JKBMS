@@ -1,0 +1,17 @@
+Listening for 8 seconds...
+Total bytes: 1672
+
+Frame 0 at offset 143: type=0x02 id/addr=0x00
+  hex: 55 aa eb 90 02 00 0a 0d 07 0d 05 0d 06 0d 06 0d 05 0d 05 0d 08 0d 05 0d 06 0d 06 0d 06 0d 05 0d
+  cells (mV): [3338, 3335, 3333, 3334, 3334, 3333, 3333, 3336]...
+
+Frame 1 at offset 451: type=0x01 id/addr=0x00
+  hex: 55 aa eb 90 01 00 ac 0d 00 00 c4 09 00 00 54 0b 00 00 42 0e 00 00 48 0d 00 00 0a 00 00 00 75 0d
+
+Frame 2 at offset 770: type=0x02 id/addr=0x05
+  hex: 55 aa eb 90 02 05 06 0d 05 0d 06 0d 05 0d 02 0d 04 0d 04 0d 04 0d 04 0d 05 0d 05 0d 06 0d 02 0d
+  cells (mV): [3334, 3333, 3334, 3333, 3330, 3332, 3332, 3332]...
+
+Frame 3 at offset 1089: type=0x01 id/addr=0x05
+  hex: 55 aa eb 90 01 05 ac 0d 00 00 14 0a 00 00 5a 0a 00 00 42 0e 00 00 de 0d 00 00 0a 00 00 00 06 0e
+

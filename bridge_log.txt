@@ -1,0 +1,8 @@
+2026-06-07 10:12:44,317 INFO solar_bridge: Polling loop started
+2026-06-07 10:12:44,854 INFO solar_bridge: Inverter: PV=3170W (330.2V 9.6A)  Load=886W  Grid=0W  Batt=54.0V 38.0A
+2026-06-07 10:12:45,357 INFO solar_bridge: QPIRI raw fields: 0=220.0 | 1=22.7 | 2=220.0 | 3=50.0 | 4=22.7 | 5=5000 | 6=5000 | 7=48.0 | 8=46.0 | 9=48.0 | 10=55.1 | 11=54.0 | 12=2 | 13=20 | 14=080 | 15=0 | 16=0 | 17=1 | 18=1 | 19=01 | 20=0 | 21=0 | 22=54.0 | 23=0 | 24=1L
+2026-06-07 10:12:45,358 INFO solar_bridge: QPIRI: out_pri=Grid first chg_pri=Grid first max_chg=80A float=54.0V
+2026-06-07 10:12:47,496 INFO solar_bridge: BMS1: 53.88V SOC=46% T=35.7°C cy=100  BMS2: 53.85V SOC=36% T=36.4°C cy=100
+2026-06-07 10:12:55,000 INFO solar_bridge: Inverter: PV=3112W (334.6V 9.3A)  Load=915W  Grid=0W  Batt=54.0V 37.0A
+2026-06-07 10:12:59,007 WARNING solar_bridge: JKBMS: no type-02 frames found in 220 bytes
+2026-06-07 10:13:00,517 INFO solar_bridge: JKBMS opened on /dev/ttyUSB0 @ 115200 (1 header(s) in probe)
