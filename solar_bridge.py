@@ -239,31 +239,35 @@ class VoltronicInverter:
         ("battery_current",  "A",   "current", "measurement"),
     ]
 
-    # QPIRI field positions — confirmed from live response:
+    # QPIRI field positions — confirmed by command testing 2026-06-07
     # 0=220.0 | 1=22.7 | 2=220.0 | 3=50.0 | 4=22.7 | 5=5000 | 6=5000
     # 7=48.0  | 8=46.0 | 9=48.0  | 10=55.1| 11=54.0| 12=2   | 13=20
-    # 14=080  | 15=0   | 16=0    | 17=1   | 18=1   | 19=01  | 20=0
-    # 21=0    | 22=54.0| 23=0    | 24=1L
+    # 14=080  | 15=0   | 16=0→1  | 17=0→3 | 18=1   | 19=01  | 20=0
+    # 21=0    | 22=46.0| 23=0    | 24=1
+    # [15]=input voltage range (always 0, NOT a priority field)
+    # [16]=output_source_priority  ← POP01 changed this 0→1 (Solar first) ✓
+    # [17]=charger_source_priority ← PCP03 changed this 1→3 (Solar only)  ✓
     QPIRI_FIELDS = [
         (7,  "battery_cutoff_voltage",      "V"),   # shutdown / under-voltage
-        (8,  "battery_back_voltage",        "V"),   # back-to-discharge (to-grid voltage)
+        (8,  "battery_back_voltage",        "V"),   # back-to-discharge
         (10, "battery_bulk_voltage",        "V"),   # absorption / bulk charge
         (11, "battery_float_voltage",       "V"),   # float charge
         (13, "max_ac_charge_current",       "A"),   # max grid charge current = 20
         (14, "max_charge_current",          "A"),   # max total charge current = 80
-        (15, "output_source_priority",      None),  # 0=Grid, 1=Solar, 2=SBU
-        (16, "charger_source_priority",     None),  # 0=Grid, 1=Solar, 2=Solar+Grid, 3=Solar
+        (16, "output_source_priority",      None),  # 0=Grid,1=Solar,2=SBU  (was [15], fixed)
+        (17, "charger_source_priority",     None),  # 0=Grid,1=Solar,2=Sol+Grid,3=SolOnly (was [16], fixed)
         (22, "battery_redischarge_voltage", "V"),   # redischarge voltage
     ]
 
     SET_COMMANDS = {
         # key → (prefix, value_transformer)
-        "output_priority": ("POPCD", lambda v: {"Grid first":"00","Solar first":"01","SBU":"02"}.get(v,"")),
-        "charger_priority": ("PPCP", lambda v: {"Grid first":"00","Solar first":"01","Solar+Grid":"02","Solar only":"03"}.get(v,"")),
-        "max_charge_current":      ("MUCHGC", lambda v: f"{int(float(v)):03d}"),
-        "max_grid_charge_current": ("MCHGC",  lambda v: f"{int(float(v)):03d}"),
+        # Confirmed working on Flin Fution (Voltronic clone) 2026-06-07:
+        "output_priority":   ("POP",   lambda v: {"Grid first":"00","Solar first":"01","SBU":"02"}.get(v,"")),
+        "charger_priority":  ("PCP",   lambda v: {"Grid first":"00","Solar first":"01","Solar+Grid":"02","Solar only":"03"}.get(v,"")),
+        "max_charge_current":      ("MUCHGC", lambda v: f"{int(float(v)):03d}"),  # MUCHGC confirmed
+        "max_grid_charge_current": ("MUCHGC", lambda v: f"{int(float(v)):03d}"),  # same prefix confirmed
         "battery_float_voltage":   ("PBFT",   lambda v: f"{float(v):.1f}"),
-        "battery_bulk_voltage":    ("PBCV",   lambda v: f"{float(v):.1f}"),
+        "battery_bulk_voltage":    ("PCVV",   lambda v: f"{float(v):.1f}"),  # PCVV not PBCV
         "battery_shutdown_voltage":("PSDV",   lambda v: f"{float(v):.1f}"),
         "battery_recharge_voltage":("PBDV",   lambda v: f"{float(v):.1f}"),
     }
