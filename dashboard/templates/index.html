@@ -161,18 +161,19 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 
 /* ── SOLAR HERO ── */
 .solar-hero{display:flex;align-items:center;gap:26px;flex-wrap:wrap}
-.sun{position:relative;width:120px;height:120px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
-.sun-core{width:62px;height:62px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#fde68a,#f59e0b 70%);
-  box-shadow:0 0 30px 6px rgba(245,158,11,.55);animation:sunPulse 3s ease-in-out infinite;z-index:1}
-@keyframes sunPulse{0%,100%{box-shadow:0 0 26px 4px rgba(245,158,11,.45);transform:scale(1)}
-  50%{box-shadow:0 0 42px 12px rgba(245,158,11,.7);transform:scale(1.05)}}
-.sun-rays{position:absolute;inset:0;animation:sunSpin 18s linear infinite}
-.sun-rays::before,.sun-rays::after{content:'';position:absolute;inset:0;border-radius:50%}
-.sun-ray{position:absolute;top:50%;left:50%;width:7px;height:18px;border-radius:4px;background:var(--solar);
-  transform-origin:50% 56px;opacity:.85}
+.sun{position:relative;width:130px;height:130px;flex:0 0 auto}
+.sun-core{position:absolute;top:50%;left:50%;width:58px;height:58px;border-radius:50%;
+  transform:translate(-50%,-50%);background:radial-gradient(circle at 40% 35%,#fde68a,#f59e0b 70%);
+  box-shadow:0 0 28px 6px rgba(245,158,11,.55);animation:sunPulse 3s ease-in-out infinite;z-index:2}
+@keyframes sunPulse{0%,100%{box-shadow:0 0 22px 4px rgba(245,158,11,.45)}
+  50%{box-shadow:0 0 40px 11px rgba(245,158,11,.7)}}
+.sun-rays{position:absolute;inset:0;animation:sunSpin 22s linear infinite;z-index:1}
+.sun-ray{position:absolute;top:50%;left:50%;width:5px;height:14px;margin:-7px -2.5px;border-radius:3px;
+  background:var(--solar);transform-origin:center center;
+  transform:rotate(var(--a,0deg)) translateY(-46px);opacity:.85}
 @keyframes sunSpin{to{transform:rotate(360deg)}}
 .sun.idle .sun-core{animation:none;background:radial-gradient(circle at 40% 35%,#475569,#334155 70%);box-shadow:none}
-.sun.idle .sun-rays{opacity:.25;animation:none}
+.sun.idle .sun-rays{opacity:.22;animation:none}
 .solar-hero-info{flex:1;min-width:200px}
 .solar-hero-info .big{font-size:2.6rem;font-weight:800;color:var(--solar);line-height:1;
   text-shadow:0 0 18px rgba(245,158,11,.35)}
@@ -929,7 +930,7 @@ footer{height:var(--ftr);background:var(--bg1);border-top:1px solid var(--border
     <div class="info-row"><span class="lbl">Dashboard URL</span><span class="val" id="dash-url">--</span></div>
     <div class="info-row"><span class="lbl">HA MQTT prefix</span><span class="val">solar/</span></div>
     <div style="margin-top:14px">
-      <button class="btn btn-danger" onclick="if(confirm('Reboot the Pi?')){svcAction('restart','all')}">
+      <button class="btn btn-danger" onclick="rebootPi()">
         <i class="fa fa-power-off"></i> Reboot Pi
       </button>
     </div>
@@ -1684,6 +1685,16 @@ async function svcAction(action, svc) {
   toast(j.ok ? `${svc} ${action}ed` : (j.msg||'failed'), j.ok ? 'ok' : 'err');
 }
 
+async function rebootPi() {
+  if (!confirm('Reboot the Raspberry Pi now? The dashboard will be offline for ~30s.')) return;
+  toast('Rebooting Pi...','ok');
+  try {
+    const r = await fetch('/api/service/reboot', {method:'POST'});
+    const j = await r.json();
+    if (!j.ok) toast(j.msg||'Reboot failed','err');
+  } catch(e) { /* connection drops as it reboots — expected */ }
+}
+
 async function doRestore() {
   const inp = document.getElementById('restore-file');
   const msg = document.getElementById('restore-msg');
@@ -1827,7 +1838,7 @@ function buildSunRays() {
   for (let i=0;i<12;i++){
     const ray=document.createElement('div');
     ray.className='sun-ray';
-    ray.style.transform=`translate(-50%,-50%) rotate(${i*30}deg) translateY(-46px)`;
+    ray.style.setProperty('--a', (i*30)+'deg');
     r.appendChild(ray);
   }
 }

@@ -177,16 +177,31 @@ def api_config_save():
     save_cfg()
     return jsonify({"ok": True})
 
+CONTROL_QUEUE = BASE.parent / "control_queue.json"
+
 @app.route("/api/control", methods=["POST"])
 @login_required
 def api_control():
     body = request.json or {}
     key  = body.get("key","")
     val  = body.get("value","")
-    if _mqtt and key:
-        _mqtt.publish(f"solar/inverter/control/{key}/set", str(val))
+    if not key:
+        return jsonify({"ok": False, "error": "missing key"}), 400
+    # 1) publish over MQTT if connected (instant)
+    if _mqtt:
+        try: _mqtt.publish(f"solar/inverter/control/{key}/set", str(val))
+        except Exception: pass
+    # 2) ALSO append to a queue file the bridge polls — works even when MQTT is down
+    try:
+        q = []
+        if CONTROL_QUEUE.exists():
+            try: q = json.loads(CONTROL_QUEUE.read_text())
+            except Exception: q = []
+        q.append({"key": key, "value": str(val), "ts": time.time()})
+        CONTROL_QUEUE.write_text(json.dumps(q[-50:]))
         return jsonify({"ok": True})
-    return jsonify({"ok": False, "error": "MQTT not connected"}), 500
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/wifi/scan")
 def wifi_scan():
@@ -259,14 +274,28 @@ def bt_scan():
 @app.route("/api/service/<action>", methods=["POST"])
 @login_required
 def service_action(action):
+    # whole-system reboot
+    if action == "reboot":
+        try:
+            subprocess.Popen(["sudo", "reboot"])
+            return jsonify({"ok": True, "msg": "Rebooting..."})
+        except Exception as e:
+            return jsonify({"ok": False, "msg": str(e)}), 500
     allowed = {"restart", "stop", "start", "status"}
     if action not in allowed:
-        return jsonify({"ok": False}), 400
+        return jsonify({"ok": False, "msg": "unknown action"}), 400
     svc = request.json.get("service", "solar-bridge") if request.json else "solar-bridge"
+    if svc not in ("solar-bridge", "solar-dashboard"):
+        return jsonify({"ok": False, "msg": "unknown service"}), 400
     try:
-        r = subprocess.run(["sudo","systemctl", action, svc],
+        r = subprocess.run(["sudo", "systemctl", action, svc],
                            capture_output=True, text=True)
-        return jsonify({"ok": r.returncode == 0, "msg": (r.stdout+r.stderr).strip()})
+        ok = r.returncode == 0
+        msg = (r.stdout + r.stderr).strip()
+        if not ok and "password" in msg.lower():
+            msg = ("Permission denied — passwordless sudo not configured. "
+                   "Re-run install_all.sh or add /etc/sudoers.d/solar-bridge.")
+        return jsonify({"ok": ok, "msg": msg})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 

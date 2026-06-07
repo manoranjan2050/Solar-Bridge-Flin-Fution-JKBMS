@@ -31,6 +31,7 @@ except Exception:                            # pragma: no cover
 CONFIG_PATH  = Path(__file__).parent / "config.ini"
 ENERGY_PATH  = Path(__file__).parent / "energy.json"
 LIVE_PATH    = Path(__file__).parent / "live_state.json"   # latest values for the dashboard (MQTT-independent)
+CONTROL_QUEUE = Path(__file__).parent / "control_queue.json"  # dashboard → bridge commands (MQTT-independent)
 INSTALL_DIR  = Path(__file__).parent
 
 # ---------------------------------------------------------------------------
@@ -1135,6 +1136,21 @@ def main():
                     bms.close()
                     bms_ok = bms.open()
                 last_bms = now
+
+            # ── Dashboard control queue (works even when MQTT is down) ───
+            if inv_ok and CONTROL_QUEUE.exists():
+                try:
+                    cmds = json.loads(CONTROL_QUEUE.read_text())
+                    CONTROL_QUEUE.unlink()       # consume the queue
+                except Exception:
+                    cmds = []
+                    try: CONTROL_QUEUE.unlink()
+                    except Exception: pass
+                for cmd in cmds:
+                    k, v = cmd.get("key"), cmd.get("value")
+                    if k:
+                        log.info("Control (queue): %s = %s", k, v)
+                        apply_control(inverter, client, k, str(v))
 
             # ── Periodic add-on tasks ────────────────────────────────────
             # Midnight rollover for daily energy
