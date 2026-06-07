@@ -420,6 +420,33 @@ def api_test_alert():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+# ── Energy statistics / forecast ─────────────────────────────────────────────────
+@app.route("/api/energy_stats")
+@login_required
+def api_energy_stats():
+    period = request.args.get("period", "day")
+    limit  = int(request.args.get("limit", "30"))
+    if not db:
+        return jsonify({"buckets": [], "totals": {}})
+    return jsonify({"buckets": db.energy_buckets(period, limit),
+                    "totals":  db.energy_totals()})
+
+@app.route("/api/solar_forecast")
+@login_required
+def api_solar_forecast():
+    """Today's actual PV-by-hour + the 'typical day' average (a simple forecast)."""
+    if not db:
+        return jsonify({"hours": list(range(24)), "today": [], "typical": []})
+    days = int(request.args.get("days", "7"))
+    typical = db.pv_profile(days)
+    today   = db.pv_today_profile()
+    hours = list(range(24))
+    return jsonify({
+        "hours":   hours,
+        "today":   [today.get(h) for h in hours],
+        "typical": [typical.get(h) for h in hours],
+    })
+
 # ── Backup / Restore ───────────────────────────────────────────────────────────
 BACKUP_FILES = ["config.ini", "automation.json", "energy.json"]
 

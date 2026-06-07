@@ -968,6 +968,12 @@ def main():
                         "inverter_battery_power": bat_power,
                         "inverter_grid_power": grid_power,
                         "inverter_battery_current": bat_current,
+                        "inverter_pv_energy": energy.get("pv_kwh"),
+                        "inverter_pv_energy_today":        energy.today("pv_kwh"),
+                        "inverter_load_energy_today":      energy.today("load_kwh"),
+                        "inverter_grid_energy_today":      energy.today("grid_in_kwh"),
+                        "inverter_battery_charge_today":   energy.today("batt_in_kwh"),
+                        "inverter_battery_discharge_today":energy.today("batt_out_kwh"),
                     })
 
                     log.info("Inverter: PV=%.0fW (%.1fV %.1fA)  Load=%.0fW  Grid=%.0fW  Batt=%.1fV %.1fA",
