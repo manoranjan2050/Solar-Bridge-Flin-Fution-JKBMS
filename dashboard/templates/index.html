@@ -277,11 +277,26 @@ footer{height:var(--ftr);background:var(--bg1);border-top:1px solid var(--border
   position:fixed;bottom:0;left:0;right:0;z-index:100}
 .ftr-item{display:flex;align-items:center;gap:6px}
 .ftr-item i{font-size:.8rem}
-.ftr-right{margin-left:auto;display:flex;gap:16px}
+.ftr-right{margin-left:auto;display:flex;gap:16px;align-items:center}
+.ftr-credit{color:var(--text3);text-decoration:none;transition:color .15s}
+.ftr-credit:hover{color:var(--solar)}
+.ftr-credit img{width:18px;height:18px;border-radius:50%;border:1px solid var(--border)}
 .dot{width:7px;height:7px;border-radius:50%;display:inline-block}
 .dot.green{background:var(--battery);box-shadow:0 0 6px var(--battery)}
 .dot.red{background:#ef4444}
 .dot.yellow{background:var(--solar)}
+
+/* ── AUTHOR CARD (sidebar) ── */
+.author-card{margin:auto 10px 14px;margin-top:auto;display:flex;align-items:center;gap:10px;
+  padding:10px;border-radius:10px;background:var(--bg2);border:1px solid var(--border);
+  text-decoration:none;color:var(--text1);transition:.15s}
+.author-card:hover{border-color:var(--solar);background:var(--bg3)}
+.author-card img{width:36px;height:36px;border-radius:50%;border:1px solid var(--border)}
+.author-meta{flex:1;min-width:0}
+.author-name{font-size:.85rem;font-weight:600}
+.author-link{font-size:.72rem;color:var(--text3)}
+.author-card .fa-github{color:var(--text2);font-size:1.1rem}
+aside#sidebar{display:flex;flex-direction:column}
 
 /* ── ALERTS / TOAST ── */
 .toast{position:fixed;top:72px;right:20px;padding:12px 20px;border-radius:10px;font-size:.85rem;
@@ -400,6 +415,16 @@ footer{height:var(--ftr);background:var(--bg1);border-top:1px solid var(--border
     <i class="fa fa-right-from-bracket"></i> Logout
   </a>
   {% endif %}
+
+  <a class="author-card" href="https://github.com/manoranjan2050" target="_blank" rel="noopener">
+    <img src="https://github.com/manoranjan2050.png?size=80" alt="Manoranjan"
+         onerror="this.style.display='none'">
+    <div class="author-meta">
+      <div class="author-name">Manoranjan</div>
+      <div class="author-link">manoranjan.dev</div>
+    </div>
+    <i class="fa fa-brands fa-github"></i>
+  </a>
 </aside>
 
 <!-- ── MAIN ── -->
@@ -1229,7 +1254,11 @@ footer{height:var(--ftr);background:var(--bg1);border-top:1px solid var(--border
     SOC: <strong id="f-soc">--%</strong></div>
   <div class="ftr-right">
     <div class="ftr-item"><i class="fa fa-clock"></i> <span id="f-time">--:--:--</span></div>
-    <div class="ftr-item">Solar Bridge © 2024</div>
+    <a class="ftr-item ftr-credit" href="https://github.com/manoranjan2050" target="_blank" rel="noopener">
+      <img src="https://github.com/manoranjan2050.png?size=40" alt="" onerror="this.style.display='none'">
+      Built by Manoranjan
+    </a>
+    <a class="ftr-item ftr-credit" href="https://manoranjan.dev" target="_blank" rel="noopener">manoranjan.dev</a>
   </div>
 </footer>
 

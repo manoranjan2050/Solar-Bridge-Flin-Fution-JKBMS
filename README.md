@@ -1,74 +1,48 @@
+<div align="center">
+
 # ☀️ Solar Bridge
 
-**Self-hosted replacement for Solar Assistant.** Runs on a Raspberry Pi, reads a
-Voltronic/Axpert-style inverter (Flin Fution) and JK BMS battery packs over USB,
-and gives you:
+**A self-hosted, open-source replacement for Solar Assistant.**
+Monitor & control a Voltronic/Axpert-style inverter + JK BMS from a beautiful web dashboard,
+Home Assistant, and Telegram — all running locally on a Raspberry Pi.
 
-- 📡 **Full MQTT + Home Assistant auto-discovery** (sensors *and* controls)
-- 📊 **A built-in web dashboard** with live power-flow, history charts and settings
-- 🔔 **Alerts** (low SOC, high temp, grid loss, inverter faults) over **Telegram / e-mail / Home Assistant**
-- 🤖 **Automation rules** (e.g. "switch to grid charging when SOC < 30%")
-- 📈 **History database** (SQLite) with daily energy that resets at midnight
-- 💬 **Telegram bot** — query your system with `/status`, `/pv`, `/battery`, `/today`
+<sub>Built by <a href="https://github.com/manoranjan2050">Manoranjan</a> · <a href="https://manoranjan.dev">manoranjan.dev</a></sub>
 
-No cloud, no subscription. Everything runs locally on the Pi.
+</div>
 
 ---
 
-## Table of Contents
-- [Hardware](#hardware)
-- [Quick Install](#quick-install)
-- [What You Get](#what-you-get)
-- [The Dashboard](#the-dashboard)
-- [Home Assistant](#home-assistant)
-- [Telegram Bot](#telegram-bot)
-- [Automation](#automation)
-- [Alerts & Notifications](#alerts--notifications)
-- [Configuration Reference](#configuration-reference)
-- [Architecture](#architecture)
-- [Deploying Changes](#deploying-changes)
-- [Troubleshooting](#troubleshooting)
-- [Protocol Notes](#protocol-notes)
-- [Known Issues](#known-issues)
+## ✨ Features
+
+- 📊 **Web dashboard** — live power-flow, animated battery cells & SOC gauge, animated solar hero
+- 📈 **History & Details** — per-day/month/year energy, totals, self-sufficiency, "today vs typical" solar forecast
+- 🏠 **Home Assistant** — full MQTT auto-discovery of every sensor **and** inverter controls
+- 💬 **Telegram bot** — query status (`/info`, `/status`, `/pv`, `/battery`, `/today`) **and control the inverter** (`/output`, `/charger`, `/maxcharge`, …)
+- 🔔 **Smart alerts** — low/critical SOC, high temps, overload, over-voltage, cell imbalance, grid loss, faults, battery-full → Telegram / e-mail / Home Assistant
+- 🤖 **Automation rules** — "if SOC < 30% → charge from grid", time-based schedules
+- 🔐 **Optional login** — password-protect the dashboard
+- 🌐 **Custom domain** — `http://solar.local` (mDNS) out of the box, or `https://solar.yourdomain.com` via the bundled nginx setup
+- 💾 **Backup & restore** — one-click settings backup; restore on a new Pi
+- ⚙️ **Works even if MQTT is down** — dashboard data and inverter control use a local file bridge, so a broker outage never blanks your dashboard
 
 ---
 
-## Hardware
-
-| Device | Connection | Port | USB ID |
-|---|---|---|---|
-| Inverter — Flin Fution (Voltronic/Axpert clone, 5kVA hybrid) | USB HID cable | `/dev/hidraw0` | `0665:5161` |
-| Battery BMS — JK BMS (new protocol, 16S LiFePO4) ×2 in parallel | CH340 USB-RS485 | `/dev/ttyUSB0` | `1a86:7523` |
-| Raspberry Pi 4 (Pi OS Lite, 64-bit) | LAN | — | — |
-
-> Works with most Voltronic / Axpert / MPP Solar / EASUN clones on PI30, and any
-> JK BMS using the `55 AA EB 90` broadcast protocol. Other devices may need
-> tweaks to the field offsets.
-
----
-
-## Quick Install
-
-On a **fresh Raspberry Pi OS Lite**:
+## 🚀 Quick Start (fresh Raspberry Pi)
 
 ```bash
-# 1. Copy the project to the Pi (from your PC):
-scp -r soalrpi/ pi@<PI_IP>:~/
-
-# 2. SSH in and run the installer:
-ssh pi@<PI_IP>
-cd soalrpi
+# On the Pi (Raspberry Pi OS Lite, 64-bit recommended):
+git clone https://github.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS.git
+cd Solar-Bridge-Flin-Fution-JKBMS
 bash install_all.sh
 ```
 
-The installer asks for MQTT host/credentials, device ports, dashboard port,
-custom hostname and an optional dashboard password — then it:
+That's it. The installer is **fully self-contained** — it will:
 
-- installs system + Python dependencies (incl. `avahi` for the custom domain),
-- sets up USB permissions (udev) and a passwordless `sudo` rule for service restarts,
-- copies all source files into `/opt/solar-bridge/`,
-- creates and enables two systemd services (auto-start on boot),
-- configures `http://<hostname>.local` access.
+1. Install all system + Python dependencies (python venv, pyserial, paho-mqtt, flask, flask-socketio, eventlet, requests, avahi, network-manager)
+2. Set up USB device permissions (udev) and passwordless service control (sudoers)
+3. Ask you for MQTT host/credentials, device ports, dashboard port, hostname, and an optional login password (a short wizard)
+4. Install both **systemd services** so everything **auto-starts on boot**
+5. Enable `http://<hostname>.local:8080` via mDNS
 
 When it finishes:
 
@@ -76,174 +50,149 @@ When it finishes:
 📊 Dashboard:  http://solar.local:8080   (or http://<PI_IP>:8080)
 ```
 
-> **Re-running the installer keeps your existing `config.ini`** so you won't lose
-> MQTT credentials. Delete `/opt/solar-bridge/config.ini` first if you want a clean one.
+> Re-running the installer **keeps your existing `config.ini`** (won't wipe MQTT creds). Delete `/opt/solar-bridge/config.ini` first for a clean reset.
 
 ---
 
-## What You Get
+## 🔌 Hardware
 
-### Services (auto-start on boot)
+| Device | Connection | Port | USB ID |
+|---|---|---|---|
+| Inverter — Flin Fution (Voltronic/Axpert clone, 5kVA hybrid) | USB HID cable | `/dev/hidraw0` | `0665:5161` |
+| Battery — JK BMS (new protocol, 16S LiFePO4) ×2 parallel | CH340 USB-RS485 | `/dev/ttyUSB0` | `1a86:7523` |
+| Raspberry Pi 4 (Pi OS Lite) | LAN | — | — |
+
+Works with most Voltronic / Axpert / MPP Solar / EASUN clones (PI30) and any JK BMS using the `55 AA EB 90` broadcast protocol.
+
+---
+
+## 🖥️ The Dashboard
+
+| Page | Shows |
+|---|---|
+| **Overview** | Animated power-flow, stat cards, energy totals, **solar generation forecast** (today vs typical) |
+| **Solar PV** | Animated sun hero, production bar, today/peak/total, today's curve, PV/MPPT + AC + Grid detail |
+| **Battery** | Animated SOC gauge + **32 animated cell bars** (charging/discharging/low, colour by cell %), per-BMS detail |
+| **Inverter** | All live readings + current settings |
+| **History** | 6h/24h/3d/7d charts of power, SOC, temperatures + daily energy |
+| **Details** | Lifetime totals + **day/month/year** breakdown chart & table, self-sufficiency |
+| **Alerts** | Alert history + Send Test Alert |
+| **Inverter Settings** | Change priorities, voltages, currents (applied straight to the inverter) |
+| **Automation** | Build threshold/time rules |
+| **Notifications** | Telegram, e-mail & alert-threshold config |
+| **Network & MQTT / Bluetooth / System / Logs** | WiFi, MQTT, BLE scan, Pi stats, backup/restore, live logs |
+
+### 🔐 Login
+Set a password during install (or **Notifications**/`config.ini → [dashboard] password`). Blank = no login. When set, the dashboard and all control APIs require sign-in.
+
+---
+
+## 🌐 Custom Domain
+
+**Local (zero config):** `http://<hostname>.local:8080` works immediately via mDNS/avahi (hostname chosen during install, e.g. `solar.local`).
+
+**Your own domain, e.g. `https://solar.manoranjan.dev`:**
 
 ```bash
-sudo systemctl status solar-bridge      # data collector (inverter + BMS → MQTT + DB)
-sudo systemctl status solar-dashboard   # web UI on port 8080
-sudo journalctl -u solar-bridge -f      # live logs
+bash setup_domain.sh
 ```
 
-### Sensors published (MQTT + HA)
+This installs **nginx** as a reverse proxy (with WebSocket support) and optionally a **Let's Encrypt HTTPS** certificate.
 
-**Inverter:** PV voltage/current/power, AC output (V/Hz/W/VA/%), grid (V/Hz/W),
-battery (V/A/W/%), bus voltage, heatsink temp, device mode, **fault/warning status**,
-lifetime energy totals **and today's energy** (PV / load / grid / battery in-out),
-plus all rated settings (float/bulk/cutoff voltages, charge currents, priorities).
-
-**Battery:** per-pack and combined "Battery Bank" — voltage, SOC, 16 cell voltages
-each, min/max/avg/diff, temps (T1/T2/MOS), cycle count, remaining/design capacity, SOH.
+**Before running it**, point the domain at your Pi:
+- **LAN only** → DNS A record (or router/hosts) `solar.yourdomain.com` → Pi's LAN IP
+- **Internet + HTTPS** → public DNS A record → your public IP, and forward ports **80 + 443** on your router to the Pi (required for Let's Encrypt)
 
 ---
 
-## The Dashboard
+## 🏠 Home Assistant
 
-Open `http://solar.local:8080` (or `http://<PI_IP>:8080`).
+The bridge auto-publishes MQTT discovery — no YAML. In HA: **Settings → Devices & Services → MQTT** shows:
+- **Flin Fution Inverter** (sensors + control entities)
+- **JK BMS 1 / 2 / Battery Bank** (battery sensors)
 
-| Page | What it shows |
-|---|---|
-| **Overview** | Power-flow diagram (Solar→Load, Battery↕, Grid), stat cards, energy totals |
-| **Solar PV** | PV voltage/current/power, AC output, grid details |
-| **Battery** | SOC gauge, BMS 1 + BMS 2 details, 32 cell-voltage bars |
-| **Inverter** | All live readings + current settings |
-| **History** | 6h/24h/3d/7d charts of power, SOC, temperatures + daily-energy bars + today's totals |
-| **Alerts** | Alert history with severity; "Send Test Alert" button |
-| **Inverter Settings** | Change priorities, voltages and currents — sent straight to the inverter |
-| **Automation** | Build threshold/time rules that change inverter settings automatically |
-| **Notifications** | Configure Telegram, e-mail and alert thresholds |
-| **Network & MQTT** | WiFi scan/connect, MQTT broker config |
-| **Bluetooth** | Scan for JK BMS over BLE |
-| **System** | CPU temp, RAM, disk, uptime, service restart buttons |
-| **Logs** | Live `solar-bridge` log output |
+Controls exposed: output/charger priority, max charge & grid-charge current, float/bulk/shutdown/recharge voltages. Alerts publish to `solar/alert`.
 
-### Optional login
-
-Set a password on the **Notifications**/config (or `config.ini` → `[dashboard] password`)
-to require a login before anyone can view data or change inverter settings.
-Leave it blank to disable login (open on the LAN).
+> HA depends on MQTT. If the broker login fails, the dashboard + Telegram still work (they don't need MQTT); the logs will show `MQTT CONNECTION REFUSED (rc=135, Not authorized)` so you know to fix the password.
 
 ---
 
-## Home Assistant
+## 💬 Telegram Bot
 
-The bridge publishes MQTT discovery automatically — no YAML needed. In HA go to
-**Settings → Devices & Services → MQTT** and you'll see:
+1. **@BotFather** → `/newbot` → copy the **token**
+2. **@userinfobot** → copy your numeric **chat id**
+3. Dashboard → **Notifications** → enable Telegram, paste both → **Save** → **Send Test Alert**
 
-- **Flin Fution Inverter** — all sensors + control entities
-- **JK BMS 1 / JK BMS 2 / Battery Bank** — all battery sensors
-
-### Controls exposed to HA
-
-| Control | Type | Inverter command |
-|---|---|---|
-| Output Source Priority | Select (Grid / Solar / SBU) | `POPCD` |
-| Charger Source Priority | Select (Grid / Solar / Solar+Grid / Solar only) | `PPCP` |
-| Max Charge Current | Number | `MUCHGC` |
-| Max Grid Charge Current | Number | `MCHGC` |
-| Battery Float Voltage | Number | `PBFT` |
-| Battery Bulk Voltage | Number | `PBCV` |
-| Battery Shutdown Voltage | Number | `PSDV` |
-| Battery Recharge Voltage | Number | `PBDV` |
-
-Alerts are also published to the MQTT topic `solar/alert` (JSON: level, message, ts)
-so you can trigger HA automations / notifications from them.
-
----
-
-## Telegram Bot
-
-1. Message **@BotFather** → `/newbot` → copy the **token**.
-2. Message **@userinfobot** → copy your numeric **chat id**.
-3. Dashboard → **Notifications** → enable Telegram, paste token + chat id → **Save**.
-
-Then message your bot:
+**Status commands**
 
 | Command | Reply |
 |---|---|
-| `/status` | PV, load, grid, battery, SOC, mode |
-| `/pv` | Solar production detail |
-| `/battery` | SOC, voltage, current, temp, cell imbalance |
-| `/today` | Today's energy totals |
+| `/info` | Full status: solar, load, grid, battery, per-BMS, cells, temps, today, settings |
+| `/status` | Quick overview |
+| `/pv` · `/battery` · `/today` | Focused views |
 
-Alerts are also pushed to this chat automatically. The bot only responds to your
-configured chat id.
+**Control commands** (drive the inverter; work even with MQTT down — the inverter ACKs each)
 
----
-
-## Automation
-
-Dashboard → **Automation** → *Add Rule*. Two rule types:
-
-- **Threshold** — when a sensor crosses a value, set an inverter control.
-  *Example:* `Battery SOC < 30 → Charger Priority = Solar+Grid`
-- **Time** — once a day at `HH:MM`, set an inverter control.
-  *Example:* `at 07:00 → Charger Priority = Solar only`
-
-Rules run on the bridge every poll cycle (threshold rules have a configurable
-cooldown). Saving rules restarts the bridge so they take effect. Rules are stored
-in `/opt/solar-bridge/automation.json`.
-
----
-
-## Alerts & Notifications
-
-Edge-triggered alerts (fire once when crossed, recover when normal, with a cooldown
-to prevent spam):
-
-| Alert | Default trigger |
+| Command | Action |
 |---|---|
-| Low battery (warning) | SOC ≤ 20% |
-| Critical battery | SOC ≤ 10% |
-| High battery temperature | ≥ 50 °C |
-| High inverter temperature | ≥ 75 °C |
-| Cell imbalance | diff ≥ 0.1 V |
-| Grid lost / restored | AC input voltage < 50 V |
-| Inverter fault | real QPIWS fault flags (warnings like "Line fail" are shown but don't alert) |
+| `/output grid \| solar \| sbu` | Output source priority |
+| `/charger grid \| solar \| solargrid \| solaronly` | Charger source priority |
+| `/maxcharge 60` | Max charge current (A) |
+| `/gridcharge 20` | Max grid charge current (A) |
+| `/float 54.0` · `/bulk 55.1` | Battery voltages (V) |
 
-All thresholds are editable on the **Notifications** page. Alerts go to every
-enabled channel (Telegram, e-mail, Home Assistant via MQTT) and are stored in the
-history DB for the Alerts page.
-
-> **Note for off-grid / solar-primary setups:** if grid is normally absent during
-> the day, turn off *Grid loss/restore* on the Notifications page to avoid daily
-> warnings.
+The bot only responds to your configured chat id.
 
 ---
 
-## Configuration Reference
+## 🤖 Automation
 
-`/opt/solar-bridge/config.ini`:
+Dashboard → **Automation** → *Add Rule*:
+- **Threshold** — e.g. `Battery SOC < 30 → Charger = Solar+Grid`
+- **Time** — e.g. `at 07:00 → Charger = Solar only`
+
+Stored in `automation.json`; saving restarts the bridge.
+
+---
+
+## 🔔 Alerts
+
+Edge-triggered (fire once, recover when normal, cooldown to avoid spam):
+low/critical **SOC**, high **battery/inverter temperature**, **overload**, **battery over-voltage**, **cell over-voltage**, **cell imbalance**, **grid lost/restored**, **inverter fault**, **battery full**. All thresholds editable on the **Notifications** page; delivered to Telegram, e-mail, and Home Assistant.
+
+---
+
+## 💾 Backup & Restore
+
+**System** page → Download Backup (config + automation + energy; optional history DB) / Restore from a `.zip` (restarts the bridge). Great before re-flashing or moving to a new Pi.
+
+---
+
+## ⚙️ Configuration Reference
+
+`/opt/solar-bridge/config.ini` (a template is in `config.ini.example`):
 
 ```ini
 [mqtt]
-host = 192.168.1.82        # your MQTT broker / Home Assistant IP
+host = 192.168.1.82
 port = 1883
 username = youruser
 password = yourpass
-topic_prefix = solar
 
 [inverter]
-port = /dev/hidraw0        # USB HID; use /dev/ttyUSB0 for serial cables
+port = /dev/hidraw0     ; USB HID; /dev/ttyUSB0 for serial cables
 protocol = PI30
 poll_interval = 10
 
 [jkbms]
 port = /dev/ttyUSB0
 baud = 115200
-poll_interval = 10
 cell_count = 16
 
 [dashboard]
 username = admin
-password =                 # blank = no login
-hostname = solar           # → http://solar.local:8080
+password =               ; blank = no login
+hostname = solar         ; → http://solar.local:8080
 
 [alerts]
 enabled = true
@@ -252,8 +201,13 @@ critical_soc = 10
 high_battery_temp = 50
 high_inverter_temp = 75
 high_cell_diff = 0.1
+overload_pct = 90
+high_battery_voltage = 57.0
+cell_overvoltage = 3.65
 notify_on_grid_loss = true
 notify_on_fault = true
+notify_on_overload = true
+notify_on_full = true
 cooldown = 1800
 
 [telegram]
@@ -266,121 +220,96 @@ enabled = false
 smtp_host = smtp.gmail.com
 smtp_port = 587
 username =
-password =                 # use an app password, not your login password
+password =               ; use an app password
 from_addr =
-to_addr =                  # comma-separated recipients
+to_addr =
 ```
 
-Most of these can be edited from the dashboard instead of by hand.
+Most settings are editable from the dashboard.
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 ```
 Raspberry Pi
 └── /opt/solar-bridge/
-    ├── solar_bridge.py        # main collector: polls inverter (QPIGS/QPIRI/QMOD/QPIWS)
-    │                          #   + BMS, publishes MQTT, accumulates energy,
-    │                          #   runs alerts + automation
-    ├── solar_db.py            # SQLite history (readings, daily_energy, alerts)
-    ├── notifier.py            # Telegram / e-mail / HA alerts + Telegram command bot
-    ├── automation.py          # rule engine (threshold + time)
-    ├── config.ini             # all settings
-    ├── energy.json            # persistent kWh totals + daily baseline
-    ├── solar_bridge.db        # SQLite history database
-    ├── automation.json        # automation rules
-    ├── dashboard/
-    │   ├── app.py             # Flask + Socket.IO backend
-    │   └── templates/         # index.html, login.html
-    └── venv/                  # pyserial, paho-mqtt, flask, flask-socketio,
-                               #   eventlet, requests
+    ├── solar_bridge.py     # collector: polls inverter (QPIGS/QPIRI/QMOD/QPIWS) + BMS,
+    │                       #   publishes MQTT, accumulates energy, runs alerts + automation,
+    │                       #   writes live_state.json, processes control_queue.json
+    ├── solar_db.py         # SQLite history (readings, daily_energy, alerts)
+    ├── notifier.py         # Telegram (alerts + command bot) / e-mail / HA alerts
+    ├── automation.py       # threshold + time rule engine
+    ├── config.ini          # settings        live_state.json   # live data for dashboard
+    ├── energy.json         # kWh totals      control_queue.json# dashboard→bridge commands
+    ├── solar_bridge.db     # history         automation.json   # rules
+    ├── dashboard/app.py + templates/         # Flask + Socket.IO web UI
+    └── venv/
 
-systemd:
-  solar-bridge.service     → solar_bridge.py
-  solar-dashboard.service  → dashboard/app.py (port 8080)
+systemd:  solar-bridge.service  ·  solar-dashboard.service   (both auto-start on boot)
+optional: nginx (reverse proxy)  via setup_domain.sh
 ```
 
-Poll cadence: QPIGS 10s · QMOD 15s · QPIWS 30s · QPIRI 60s · BMS 10s ·
-history snapshot 60s · daily-energy rollover at midnight.
+**Why it's resilient:** the dashboard reads `live_state.json` and sends control via `control_queue.json`, both written/read locally — so it keeps working even if the MQTT broker is unreachable. MQTT is only required for Home Assistant.
 
 ---
 
-## Deploying Changes
-
-Edit files on your PC, then push to the Pi.
-
-**Using the bundled deploy script** (configure credentials first — see below):
+## 🔄 Deploying Code Changes (developers)
 
 ```bash
-python deploy.py            # uploads bridge + modules, installs deps, restarts
+# Configure once: copy deploy_secrets.example.py → deploy_secrets.py (git-ignored) and fill in Pi creds,
+# or set DEPLOY_HOST / DEPLOY_USER / DEPLOY_PASS env vars.
+python deploy.py            # uploads bridge + modules, installs deps, restarts services
 ```
-
-**Manually:**
-
-```bash
-scp solar_bridge.py solar_db.py notifier.py automation.py \
-    youruser@<PI_IP>:/opt/solar-bridge/
-scp dashboard/app.py youruser@<PI_IP>:/opt/solar-bridge/dashboard/
-scp dashboard/templates/*.html youruser@<PI_IP>:/opt/solar-bridge/dashboard/templates/
-ssh youruser@<PI_IP> "sudo systemctl restart solar-bridge solar-dashboard"
-```
-
-> **Credentials:** `deploy.py` reads the Pi host/user/password from environment
-> variables (`DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_PASS`) or a **git-ignored**
-> `deploy_secrets.py`. Copy `deploy_secrets.example.py` → `deploy_secrets.py` and
-> fill in your details. Never commit real credentials.
+`config.ini` is never uploaded by `deploy.py`, so live credentials are safe.
 
 ---
 
-## Troubleshooting
+## 🛠️ Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Cause / Fix |
 |---|---|
-| No inverter data / NAK | Check `/dev/hidraw0` exists (`ls /dev/hidraw*`); try unplug/replug; verify protocol PI30 |
-| BMS "no type-02 frames" occasionally | Normal — it retries; the BMS broadcasts intermittently |
-| Dashboard "Save & Restart" does nothing | The installer adds a sudoers rule; if you skipped it, run the installer again |
-| Telegram not sending | Enable it on Notifications, double-check token + chat id, ensure Pi has internet |
-| `http://solar.local` not resolving | Reboot the Pi (hostname change), ensure `avahi-daemon` is running; use the IP meanwhile |
-| Permission errors on USB | `sudo usermod -aG dialout,plugdev <user>` then re-login/reboot |
+| **Dashboard shows blank / `--` everywhere** | Bridge not running or no data file. `sudo systemctl status solar-bridge`; check Logs page. |
+| **Home Assistant gets no data; Logs show `rc=135 Not authorized`** | Wrong MQTT password in `config.ini [mqtt]`. Fix it (HA Mosquitto uses HA user accounts), then `sudo systemctl restart solar-bridge`. Dashboard/Telegram work regardless. |
+| **Inverter setting changes don't apply** | They go via the local command queue now — check Logs for `CMD … -> ACK`. `FAIL`/`NAK` = inverter rejected; `ACK` = applied. |
+| **"Save & Restart" / Reboot button: `sudo: a password is required`** | Passwordless sudo rule missing. Re-run `bash install_all.sh` (installs `/etc/sudoers.d/solar-bridge`). |
+| **No inverter data / NAK** | `ls /dev/hidraw*` exists? Unplug/replug; confirm protocol `PI30`. |
+| **BMS: "no type-02 frames"** occasionally | Normal — it retries; the BMS broadcasts intermittently. |
+| **Wrong battery SOC** | Fixed in this project (JK new-protocol offsets). If still off, capture a frame and check offsets in `solar_bridge.py`. |
+| **`http://solar.local` not resolving** | Reboot the Pi (hostname change), ensure `avahi-daemon` running; use the IP meanwhile. |
+| **Custom domain not loading** | DNS A record must point to the Pi; for HTTPS, ports 80/443 must reach it. See `setup_domain.sh` notes. |
+| **Telegram silent** | Enable on Notifications, recheck token + chat id, ensure Pi has internet. |
+| **USB permission errors** | `sudo usermod -aG dialout,plugdev <user>` then reboot. |
 
-Useful commands:
+Handy commands:
 
 ```bash
 sudo systemctl restart solar-bridge solar-dashboard
-sudo journalctl -u solar-bridge -f
-cat /opt/solar-bridge/energy.json
-ls -la /dev/hidraw* /dev/ttyUSB*
+sudo journalctl -u solar-bridge -f          # live bridge logs (sensor reads, CMD ACKs, alerts)
+sudo journalctl -u solar-dashboard -f       # web server logs
+cat /opt/solar-bridge/energy.json           # energy totals
+ls -la /dev/hidraw* /dev/ttyUSB*            # devices
 ```
 
 ---
 
-## Protocol Notes
+## 📡 Protocol Notes
 
-**Inverter (Voltronic PI30 over USB HID):** 9-byte writes (`0x00` + 8 data),
-8 raw bytes per read packet (no count prefix on this `0665:5161` device),
-Voltronic table CRC-16, responses start with `(`, set commands reply `(ACK`/`(NAK`.
+**Inverter (Voltronic PI30 / USB HID):** 9-byte writes (`0x00` + 8 data), 8 raw bytes per read packet, Voltronic table CRC-16, responses start `(`, set commands reply `(ACK`/`(NAK`.
 
-**JK BMS (new protocol `55 AA EB 90`):** broadcasts passively every ~1s; type-`0x02`
-frame carries cell info. Key offsets: cells `+6` (16×uint16 LE mV), MOS temp `+144`,
-pack voltage `+150`, remaining capacity `+154`, temps `+162/+164`, SOC `+182`,
-design capacity `+186`, cycles `+190`. Two packs are told apart by frame byte `+5`
-(`0x00` = BMS1, `0x05` = BMS2).
+**JK BMS (`55 AA EB 90`, type `0x02`):** broadcasts ~1/s. Offsets: cells `+6` (16×u16 mV), MOS temp `+144`, pack V `+150`, temp1/2 `+162/164`, **SOC `+173` (u8)**, remaining cap `+174`, design cap `+178`, cycles `+182`, SOH `+190`. Two packs distinguished by frame byte `+5` (`0x00`=BMS1, `0x05`=BMS2).
 
 ---
 
-## Known Issues
+## ⚠️ Known Issues
 
-- **BMS current reads 0 A** — the current field offset isn't confirmed for this
-  firmware variant. Power/energy are derived from the inverter instead.
-- **BMS SOC can differ between packs (e.g. 46% vs 36%)** — packs report independently;
-  the Bank value averages them.
-- **Remaining capacity (Ah) occasionally spikes** — frame offset can shift between
-  frame variants; capped for sanity.
+- **BMS current reads 0 A** — current-field offset not yet confirmed for this firmware; power is derived from the inverter.
+- **JK BMS is read-only** (passive monitoring). Charging behaviour is controlled via the inverter, not the BMS.
 
 ---
 
-## License
+## 🙏 Credits
 
-Personal project — use at your own risk. Always double-check inverter setting
-changes against your battery/installer specifications.
+Built by **[Manoranjan](https://github.com/manoranjan2050)** · [manoranjan.dev](https://manoranjan.dev)
+
+Use at your own risk. Always verify inverter setting changes against your battery/installer specifications.
