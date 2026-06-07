@@ -203,6 +203,77 @@ class SolarDB:
             except Exception as e:
                 return {}
 
+    def energy_buckets(self, period: str = "day", limit: int = 30) -> list:
+        """
+        Aggregate daily_energy into day / month / year buckets.
+        Returns [{bucket, pv_kwh, load_kwh, grid_in_kwh, grid_out_kwh,
+                  batt_in_kwh, batt_out_kwh}, ...] newest first.
+        """
+        if period == "month":
+            grp = "substr(date,1,7)"
+        elif period == "year":
+            grp = "substr(date,1,4)"
+        else:
+            grp = "date"
+        with self._lock:
+            try:
+                conn = get_conn()
+                rows = conn.execute(
+                    f"SELECT {grp} AS bucket, key, SUM(value) AS total "
+                    f"FROM daily_energy GROUP BY bucket, key "
+                    f"ORDER BY bucket DESC", ).fetchall()
+            except Exception as e:
+                print(f"DB energy_buckets error: {e}")
+                return []
+        buckets = {}
+        for r in rows:
+            buckets.setdefault(r["bucket"], {})[r["key"]] = round(r["total"], 3)
+        out = [{"bucket": b, **vals} for b, vals in buckets.items()]
+        out.sort(key=lambda x: x["bucket"], reverse=True)
+        return out[:limit]
+
+    def energy_totals(self) -> dict:
+        """Lifetime totals across all recorded days."""
+        with self._lock:
+            try:
+                conn = get_conn()
+                rows = conn.execute(
+                    "SELECT key, SUM(value) AS total FROM daily_energy GROUP BY key").fetchall()
+                return {r["key"]: round(r["total"], 3) for r in rows}
+            except Exception:
+                return {}
+
+    def pv_profile(self, days: int = 7) -> dict:
+        """Average PV power for each hour of day over the last N days (the
+        'typical day' used as a generation reference / forecast)."""
+        since = time.time() - days * 86400
+        with self._lock:
+            try:
+                conn = get_conn()
+                rows = conn.execute(
+                    "SELECT CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) h, "
+                    "AVG(value) a FROM readings WHERE key='inverter_pv_power' AND ts>=? "
+                    "GROUP BY h", (since,)).fetchall()
+                return {int(r["h"]): round(r["a"], 1) for r in rows}
+            except Exception as e:
+                print(f"DB pv_profile error: {e}")
+                return {}
+
+    def pv_today_profile(self) -> dict:
+        """Average PV power per hour for today (actual generation so far)."""
+        from datetime import datetime
+        start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+        with self._lock:
+            try:
+                conn = get_conn()
+                rows = conn.execute(
+                    "SELECT CAST(strftime('%H', ts, 'unixepoch', 'localtime') AS INTEGER) h, "
+                    "AVG(value) a FROM readings WHERE key='inverter_pv_power' AND ts>=? "
+                    "GROUP BY h", (start,)).fetchall()
+                return {int(r["h"]): round(r["a"], 1) for r in rows}
+            except Exception:
+                return {}
+
     def get_alerts(self, limit: int = 20, unacked_only: bool = False) -> list:
         """Return recent alerts."""
         with self._lock:
