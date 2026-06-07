@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Solar Bridge Dashboard — Flask + WebSocket backend."""
 
-import configparser, json, os, subprocess, sys, threading, time
+import configparser, io, json, os, subprocess, sys, threading, time, zipfile
+from datetime import datetime
 from functools import wraps
 from pathlib import Path
 from flask import (Flask, render_template, request, jsonify,
-                   session, redirect, url_for)
+                   session, redirect, url_for, send_file)
 from flask_socketio import SocketIO
 import paho.mqtt.client as mqtt
 
@@ -416,6 +417,60 @@ def api_test_alert():
         load_cfg()
         Notifier(cfg, _mqtt).send("info", "✅ Test alert from Solar Bridge dashboard")
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ── Backup / Restore ───────────────────────────────────────────────────────────
+BACKUP_FILES = ["config.ini", "automation.json", "energy.json"]
+
+@app.route("/api/backup")
+@login_required
+def api_backup():
+    """Download a .zip of settings (config + automation + energy; optionally history)."""
+    include_history = request.args.get("history") == "1"
+    mem = io.BytesIO()
+    with zipfile.ZipFile(mem, "w", zipfile.ZIP_DEFLATED) as z:
+        for name in BACKUP_FILES:
+            p = BASE.parent / name
+            if p.exists():
+                z.write(p, name)
+        if include_history:
+            dbp = BASE.parent / "solar_bridge.db"
+            if dbp.exists():
+                z.write(dbp, "solar_bridge.db")
+        z.writestr("MANIFEST.txt",
+                   f"Solar Bridge backup\ncreated: {datetime.now().isoformat()}\n"
+                   f"history_included: {include_history}\n")
+    mem.seek(0)
+    fn = f"solar-bridge-backup-{datetime.now():%Y%m%d-%H%M%S}.zip"
+    return send_file(mem, mimetype="application/zip", as_attachment=True, download_name=fn)
+
+@app.route("/api/restore", methods=["POST"])
+@login_required
+def api_restore():
+    """Restore settings from an uploaded backup .zip, then restart the bridge."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+    allowed = set(BACKUP_FILES) | {"solar_bridge.db"}
+    try:
+        with zipfile.ZipFile(io.BytesIO(f.read())) as z:
+            restored = []
+            for name in z.namelist():
+                base = os.path.basename(name)        # prevent path traversal
+                if base in allowed:
+                    with z.open(name) as src:
+                        (BASE.parent / base).write_bytes(src.read())
+                    restored.append(base)
+        if not restored:
+            return jsonify({"ok": False, "error": "No recognised files in backup"}), 400
+        try:
+            subprocess.run(["sudo", "systemctl", "restart", "solar-bridge"], timeout=15)
+        except Exception:
+            pass
+        return jsonify({"ok": True, "restored": restored})
+    except zipfile.BadZipFile:
+        return jsonify({"ok": False, "error": "Invalid backup file (not a .zip)"}), 400
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 

@@ -26,7 +26,8 @@
       "Bash(rm -f solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm energy.json automation.json)",
       "Bash(python -c \"import paramiko; print\\('paramiko', paramiko.__version__\\)\")",
       "Bash(rm -f live_state.json energy.json solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm)",
-      "Bash(rm -rf __pycache__ dashboard/__pycache__)"
+      "Bash(rm -rf __pycache__ dashboard/__pycache__)",
+      "Bash(cp config.ini.example config.ini)"
     ]
   }
 }
