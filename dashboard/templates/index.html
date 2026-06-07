@@ -1084,7 +1084,11 @@ function toggleSidebar() {
 // ── Value helpers ─────────────────────────────────────────────────────────
 const v = (id, val, unit='') => {
   const el = document.getElementById(id);
-  if (el) el.textContent = val !== undefined && val !== null && val !== '' ? `${val}${unit}` : '--';
+  if (!el) return;
+  let s = (val !== undefined && val !== null && val !== '') ? `${val}${unit}` : '--';
+  // never render literal null/NaN/undefined when a sensor value is missing
+  s = s.replace(/-?\bnull\b|-?\bundefined\b|\bNaN\b/g, '--');
+  el.textContent = s;
 };
 const f = (x, d=1) => (x !== undefined && x !== '' && !isNaN(x)) ? parseFloat(x).toFixed(d) : null;
 const pct = x => f(x, 0);
@@ -1698,7 +1702,18 @@ window.addEventListener('load', async () => {
   loadConfig();
   updateAlertBadge();
   setInterval(updateAlertBadge, 60000);
+  // Poll /api/state as a fallback so data refreshes even when MQTT/live push
+  // isn't delivering (dashboard reads the bridge's live_state.json).
+  setInterval(refreshState, 10000);
 });
+
+async function refreshState() {
+  try {
+    const r = await fetch('/api/state');
+    Object.assign(D, await r.json());
+    updateAll();
+  } catch (e) {}
+}
 
 // Close sidebar when clicking outside on mobile
 document.getElementById('main').addEventListener('click', () => {

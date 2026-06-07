@@ -30,6 +30,7 @@ except Exception:                            # pragma: no cover
 
 CONFIG_PATH  = Path(__file__).parent / "config.ini"
 ENERGY_PATH  = Path(__file__).parent / "energy.json"
+LIVE_PATH    = Path(__file__).parent / "live_state.json"   # latest values for the dashboard (MQTT-independent)
 INSTALL_DIR  = Path(__file__).parent
 
 # ---------------------------------------------------------------------------
@@ -151,13 +152,29 @@ def mqtt_connect(cfg, on_message_cb):
                          client_id="solar_bridge", clean_session=True)
     if user:
         client.username_pw_set(user, password or None)
+
+    def _on_connect(cl, userdata, flags, rc, props=None):
+        code = getattr(rc, "value", rc)
+        if code == 0:
+            log.info("MQTT connected to %s:%s as %r", host, port, user or "(anonymous)")
+            cl.subscribe(f"{CTRL_TOPIC}/+/set")
+            cl.publish("solar/bridge/status", "online", retain=True)
+        else:
+            log.error("MQTT CONNECTION REFUSED by %s:%s (rc=%s, %s). "
+                      "Check [mqtt] username/password in config.ini!",
+                      host, port, code, rc)
+
+    def _on_disconnect(cl, userdata, *args):
+        log.warning("MQTT disconnected from %s:%s (will retry)", host, port)
+
+    client.on_connect = _on_connect
+    client.on_disconnect = _on_disconnect
     client.on_message = on_message_cb
     client.will_set("solar/bridge/status", "offline", retain=True)
+    client.reconnect_delay_set(min_delay=5, max_delay=60)
     client.connect(host, port, keepalive=60)
     client.loop_start()
-    client.subscribe(f"{CTRL_TOPIC}/+/set")
-    client.publish("solar/bridge/status", "online", retain=True)
-    log.info("MQTT connected to %s:%s", host, port)
+    log.info("MQTT connecting to %s:%s ...", host, port)
     return client
 
 
@@ -879,6 +896,7 @@ def main():
     last_qmod    = 0
     last_qpiws   = 0
     last_persist = 0          # DB snapshot + daily energy push (every 60s)
+    last_live    = 0          # live_state.json write for the dashboard (every 3s)
     last_inv_data = {}
 
     log.info("Polling loop started")
@@ -973,11 +991,16 @@ def main():
                     for _, key, _ in VoltronicInverter.QPIRI_FIELDS:
                         if key in s:
                             pub(client, f"solar/inverter/{key}", s[key])
+                            latest_state[f"inverter_{key}"] = s[key]
                     # Publish control state topics (so HA shows current values)
                     pri_map = {0:"Grid first", 1:"Solar first", 2:"SBU"}
                     chg_map = {0:"Grid first", 1:"Solar first", 2:"Solar+Grid", 3:"Solar only"}
                     op = s.get("output_source_priority")
                     cp = s.get("charger_source_priority")
+                    if op is not None: latest_state["inverter_control_output_priority"]  = pri_map.get(int(op),"")
+                    if cp is not None: latest_state["inverter_control_charger_priority"] = chg_map.get(int(cp),"")
+                    if "max_charge_current"    in s: latest_state["inverter_max_charge_current"]    = int(s["max_charge_current"])
+                    if "max_ac_charge_current" in s: latest_state["inverter_max_ac_charge_current"] = int(s["max_ac_charge_current"])
                     if op is not None: client.publish("solar/inverter/control/output_priority",  pri_map.get(int(op),""), retain=True)
                     if cp is not None: client.publish("solar/inverter/control/charger_priority", chg_map.get(int(cp),""), retain=True)
                     if "max_charge_current" in s:
@@ -1064,19 +1087,30 @@ def main():
                         soh = round(sum(all_rem) / sum(all_des) * 100, 1)
                         pub(client, "solar/bank/state_of_health", min(100.0, soh))
 
-                    # Mirror BMS data into flat state for alerts/automation/Telegram
+                    # Mirror BMS data into flat state for alerts/automation/Telegram/dashboard
                     for frame_id, d in all_bms.items():
                         prefix = BMS_FRAME_IDS.get(frame_id, f"bms_{frame_id:02x}")
                         for k2, val in d.items():
-                            if k2 in ("frame_id", "cell_voltages"):
+                            if k2 == "frame_id":
+                                continue
+                            if k2 == "cell_voltages":
+                                for i, cv in enumerate(val):
+                                    latest_state[f"{prefix}_cell_{i+1:02d}_voltage"] = cv
                                 continue
                             latest_state[f"{prefix}_{k2}"] = val
                     if all_v:   latest_state["bank_battery_voltage"] = round(sum(all_v)/len(all_v), 3)
                     if all_soc: latest_state["bank_battery_soc"]     = round(sum(all_soc)/len(all_soc))
                     if all_mos: latest_state["bank_temp_mos"]        = round(sum(all_mos)/len(all_mos), 1)
                     if all_t1:  latest_state["bank_temp_battery_1"]  = round(sum(all_t1)/len(all_t1), 1)
+                    if all_t2:  latest_state["bank_temp_battery_2"]  = round(sum(all_t2)/len(all_t2), 1)
+                    if all_rem: latest_state["bank_total_remaining_capacity"] = round(sum(all_rem), 1)
+                    if all_des: latest_state["bank_total_design_capacity"]    = round(sum(all_des), 1)
+                    if all_cm:  latest_state["bank_cell_voltage_min"] = min(all_cm)
+                    if all_cx:  latest_state["bank_cell_voltage_max"] = max(all_cx)
                     if all_cm and all_cx:
                         latest_state["bank_cell_voltage_diff"] = round(max(all_cx) - min(all_cm), 3)
+                    if all_rem and all_des and sum(all_des) > 0:
+                        latest_state["bank_state_of_health"] = min(100.0, round(sum(all_rem)/sum(all_des)*100, 1))
 
                     # Log one line per BMS + combined
                     parts = []
@@ -1100,6 +1134,16 @@ def main():
             # Midnight rollover for daily energy
             if energy.rollover_if_new_day() and notifier:
                 notifier.send("info", "📅 New day — daily energy counters reset.")
+
+            # Live snapshot file for the dashboard (works even if MQTT is down)
+            if now - last_live >= 3 and latest_state:
+                try:
+                    tmp = LIVE_PATH.with_suffix(".tmp")
+                    tmp.write_text(json.dumps({**latest_state, "_ts": now}))
+                    tmp.replace(LIVE_PATH)
+                except Exception as e:
+                    log.debug("live_state write failed: %s", e)
+                last_live = now
 
             # History snapshot + daily energy push (every 60s)
             if now - last_persist >= 60:

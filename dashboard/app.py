@@ -89,8 +89,14 @@ def mqtt_on_message(client, userdata, msg):
     socketio.emit("update", {"k": key, "v": raw})
 
 def mqtt_on_connect(client, userdata, flags, rc, props=None):
-    client.subscribe("solar/#")
-    socketio.emit("bridge_status", {"connected": rc == 0})
+    code = getattr(rc, "value", rc)
+    if code == 0:
+        client.subscribe("solar/#")
+        print(f"[dashboard] MQTT connected, subscribed to solar/#")
+    else:
+        print(f"[dashboard] MQTT CONNECTION REFUSED (rc={code}, {rc}). "
+              f"Check [mqtt] username/password in config.ini!")
+    socketio.emit("bridge_status", {"connected": code == 0})
 
 def start_mqtt():
     global _mqtt
@@ -117,12 +123,21 @@ def index():
     _, pwd = auth_creds()
     return render_template("index.html", auth_enabled=bool(pwd))
 
+LIVE_PATH = BASE.parent / "live_state.json"
+
 @app.route("/api/state")
 def api_state():
+    # live_state.json is written by the bridge from the USB reads, so the
+    # dashboard shows data even when MQTT is unavailable. Live MQTT values
+    # (in `state`) override the file when present.
+    live = {}
+    try: live = json.loads(LIVE_PATH.read_text())
+    except: pass
     nrg = {}
     try: nrg = json.loads(NRG_PATH.read_text())
     except: pass
-    return jsonify({**state, **{f"energy_{k}": v for k, v in nrg.items()}})
+    nrg = {k: v for k, v in nrg.items() if not isinstance(v, dict)}  # skip baseline/day
+    return jsonify({**live, **state, **{f"energy_{k}": v for k, v in nrg.items()}})
 
 @app.route("/api/config")
 def api_config():

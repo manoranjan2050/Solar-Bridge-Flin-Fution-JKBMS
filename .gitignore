@@ -6,6 +6,7 @@ config.ini
 
 # ── Runtime data / generated ────────────────────────────────────────────────
 energy.json
+live_state.json
 *.db
 *.db-wal
 *.db-shm
@@ -27,6 +28,8 @@ dual_bms.txt
 # ── Big / private assets ────────────────────────────────────────────────────
 solarassisant/
 *.img
+# local debug screenshots:
+bug/
 
 # ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
