@@ -7,14 +7,34 @@ import time
 import paramiko
 from pathlib import Path
 
-HOST = "192.168.1.32"
-USER = "manoranjan"
-PASS = "M@$ter@2050"
+# ── Credentials ────────────────────────────────────────────────────────────
+# Load from environment variables or a git-ignored deploy_secrets.py.
+# Copy deploy_secrets.example.py -> deploy_secrets.py and fill in your details.
+try:
+    import deploy_secrets as _s
+    HOST = getattr(_s, "HOST", None)
+    USER = getattr(_s, "USER", None)
+    PASS = getattr(_s, "PASS", None)
+except Exception:
+    HOST = USER = PASS = None
+
+HOST = os.environ.get("DEPLOY_HOST", HOST)
+USER = os.environ.get("DEPLOY_USER", USER)
+PASS = os.environ.get("DEPLOY_PASS", PASS)
+
+if not all([HOST, USER, PASS]):
+    import getpass
+    HOST = HOST or input("Pi host/IP: ").strip()
+    USER = USER or input("Pi user: ").strip()
+    PASS = PASS or getpass.getpass("Pi password: ")
+
 REMOTE_HOME = f"/home/{USER}"
 INSTALL_DIR = "/opt/solar-bridge"
 
+# NOTE: config.ini is intentionally NOT uploaded so we never overwrite the
+# Pi's live MQTT credentials. Edit config on the Pi or via the dashboard.
 FILES = ["solar_bridge.py", "solar_db.py", "notifier.py", "automation.py",
-         "config.ini", "setup.sh", "solar-bridge.service", "detect_devices.sh"]
+         "setup.sh", "solar-bridge.service", "detect_devices.sh"]
 
 BASE = Path(__file__).parent
 
