@@ -26,7 +26,8 @@ except Exception:
     automation_mod = None
 
 app       = Flask(__name__)
-app.config["SECRET_KEY"] = "solar-bridge-2024"
+app.config["SECRET_KEY"] = os.environ.get("DASH_SECRET", "solar-bridge-secret-key-2025")
+app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30   # stay logged in 30 days
 socketio  = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
 # ── Authentication ─────────────────────────────────────────────────────────
@@ -55,6 +56,7 @@ def login():
     if request.method == "POST":
         body = request.form
         if body.get("username") == user and body.get("password") == pwd:
+            session.permanent = True          # honour PERMANENT_SESSION_LIFETIME
             session["auth"] = True
             return redirect(url_for("index"))
         return render_template("login.html", error="Invalid credentials")
@@ -64,6 +66,33 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
+
+@app.route("/api/default_user")
+def api_default_user():
+    """Return the configured dashboard username (not the password)."""
+    user, _ = auth_creds()
+    return jsonify({"username": user})
+
+@app.route("/api/change_password", methods=["POST"])
+@login_required
+def api_change_password():
+    body = request.json or {}
+    old_user, old_pwd = auth_creds()
+    current = body.get("current_password", "")
+    new_user = body.get("new_username", "").strip()
+    new_pwd  = body.get("new_password", "").strip()
+    if old_pwd and current != old_pwd:
+        return jsonify({"ok": False, "error": "Current password is incorrect"}), 400
+    if not new_user:
+        return jsonify({"ok": False, "error": "Username cannot be blank"}), 400
+    load_cfg()
+    if not cfg.has_section("dashboard"):
+        cfg.add_section("dashboard")
+    cfg.set("dashboard", "username", new_user)
+    cfg.set("dashboard", "password", new_pwd)
+    save_cfg()
+    session.clear()   # force re-login with new credentials
+    return jsonify({"ok": True, "msg": "Credentials updated — please sign in again"})
 
 # ── In-memory state ──────────────────────────────────────────────────────────
 state   = {}          # topic_key → value

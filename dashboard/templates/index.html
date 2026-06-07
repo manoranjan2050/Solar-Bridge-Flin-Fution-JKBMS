@@ -970,6 +970,26 @@ aside#sidebar{display:flex;flex-direction:column}
     </div>
   </div>
 
+  <!-- Change Password -->
+  <div class="card" style="grid-column:1/-1;margin-top:16px" id="change-pwd-card">
+    <div class="card-title"><i class="fa fa-key"></i> Change Dashboard Login</div>
+    <div class="form-grid">
+      <div class="form-group"><label>Current Password</label>
+        <input type="password" id="cp-cur" placeholder="leave blank if none set" autocomplete="current-password"></div>
+      <div class="form-group"><label>New Username</label>
+        <input id="cp-user" placeholder="admin" autocomplete="username" autocorrect="off" autocapitalize="off"></div>
+      <div class="form-group"><label>New Password</label>
+        <input type="password" id="cp-new" placeholder="new password" autocomplete="new-password"></div>
+      <div class="form-group"><label>Confirm New Password</label>
+        <input type="password" id="cp-conf" placeholder="repeat password" autocomplete="new-password"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:14px;align-items:center">
+      <button class="btn btn-primary" onclick="changePassword()">
+        <i class="fa fa-key"></i> Update Login</button>
+      <span id="cp-msg" style="font-size:.82rem;color:var(--text2)"></span>
+    </div>
+  </div>
+
   <!-- Backup & Restore -->
   <div class="card" style="grid-column:1/-1;margin-top:16px">
     <div class="card-title"><i class="fa fa-box-archive"></i> Backup &amp; Restore</div>
@@ -1750,6 +1770,31 @@ async function rebootPi() {
     const j = await r.json();
     if (!j.ok) toast(j.msg||'Reboot failed','err');
   } catch(e) { /* connection drops as it reboots — expected */ }
+}
+
+async function changePassword() {
+  const cur  = document.getElementById('cp-cur').value;
+  const user = document.getElementById('cp-user').value.trim();
+  const np   = document.getElementById('cp-new').value;
+  const nc   = document.getElementById('cp-conf').value;
+  const msg  = document.getElementById('cp-msg');
+  if (!user)          { toast('Username cannot be blank','err'); return; }
+  if (np !== nc)      { toast('Passwords do not match','err'); return; }
+  msg.textContent = 'Updating...'; msg.style.color='var(--solar)';
+  try {
+    const r = await fetch('/api/change_password',{method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({current_password:cur,new_username:user,new_password:np})});
+    const j = await r.json();
+    if (j.ok) {
+      msg.style.color='var(--battery)'; msg.textContent = j.msg;
+      toast('Login updated — redirecting to sign in…','ok');
+      setTimeout(()=>window.location='/logout', 1500);
+    } else {
+      msg.style.color='var(--load)'; msg.textContent = j.error||'Failed';
+      toast(j.error||'Failed','err');
+    }
+  } catch(e) { msg.style.color='var(--load)'; msg.textContent='Error: '+e; }
 }
 
 async function doRestore() {
