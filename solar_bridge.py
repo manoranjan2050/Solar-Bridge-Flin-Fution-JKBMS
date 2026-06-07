@@ -657,19 +657,21 @@ class JKBMS:
     def _parse_cell_frame(self, frame: bytes) -> dict:
         """
         JK BMS new-protocol type-02 (cell info) frame.
-        Confirmed byte offsets (from live dual-BMS passive capture):
+        Confirmed byte offsets (from live dual-BMS passive capture, 2026-06-07):
           +5   : device frame ID (0x00=BMS1, 0x05=BMS2)
           +6   : 16 × uint16 LE  cell voltages (mV)
-          +144 : uint32 LE  MOS temperature (0.1°C)
+          +144 : uint16 LE  MOS temperature (0.1°C)
           +150 : uint32 LE  pack voltage (mV)
-          +154 : uint32 LE  remaining capacity (mAh)
           +162 : uint16 LE  temperature 1 (0.1°C)
           +164 : uint16 LE  temperature 2 (0.1°C)
-          +182 : uint32 LE  SOC %
-          +186 : uint32 LE  design capacity (mAh)
-          +190 : uint32 LE  cycle count
+          +173 : uint8      SOC %                       ← (was wrongly read at +182)
+          +174 : uint32 LE  remaining capacity (mAh)    ← (was wrongly read at +154)
+          +178 : uint32 LE  nominal/design capacity (mAh) ← (was wrongly read at +186)
+          +182 : uint32 LE  cycle count                 ← (was wrongly read at +190)
+          +190 : uint8      state of health %           ← (was wrongly reported as cycles)
         """
         data = {}
+        def u8(off):  return frame[off] if off < len(frame) else None
         def u16(off): return struct.unpack_from("<H", frame, off)[0] if off+2<=len(frame) else None
         def u32(off): return struct.unpack_from("<I", frame, off)[0] if off+4<=len(frame) else None
 
@@ -690,7 +692,7 @@ class JKBMS:
         if v and 10_000 < v < 120_000:
             data["battery_voltage"] = round(v / 1000, 2)
 
-        rc = u32(154)
+        rc = u32(174)
         if rc and rc < 1_000_000:
             data["remaining_capacity_ah"] = round(rc / 1000, 1)
 
@@ -701,27 +703,25 @@ class JKBMS:
         if t2 and 200 < t2 < 800:
             data["temp_battery_2"] = round(t2 / 10, 1)
 
-        mos = u32(144)
+        mos = u16(144)
         if mos and 200 < mos < 800:
             data["temp_mos"] = round(mos / 10, 1)
 
-        soc = u32(182)
+        soc = u8(173)
         if soc is not None and 0 <= soc <= 100:
             data["battery_soc"] = soc
 
-        dc_val = u32(186)
+        dc_val = u32(178)
         if dc_val and 1000 < dc_val < 2_000_000:
             data["design_capacity_ah"] = round(dc_val / 1000, 1)
 
-        cyc = u32(190)
+        cyc = u32(182)
         if cyc is not None and cyc < 100_000:
             data["battery_cycles"] = cyc
 
-        if "remaining_capacity_ah" in data and "design_capacity_ah" in data \
-                and data["design_capacity_ah"] > 0:
-            soh = round(data["remaining_capacity_ah"] / data["design_capacity_ah"] * 100, 1)
-            if 0 < soh <= 110:
-                data["state_of_health"] = min(100.0, soh)
+        soh = u8(190)
+        if soh is not None and 0 < soh <= 100:
+            data["state_of_health"] = soh
 
         return data
 
