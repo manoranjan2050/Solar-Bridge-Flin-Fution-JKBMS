@@ -1,0 +1,39 @@
+# ── Secrets (NEVER commit) ──────────────────────────────────────────────────
+deploy_secrets.py
+config.ini                 # contains live MQTT credentials on each machine
+
+# ── Runtime data / generated ────────────────────────────────────────────────
+energy.json
+*.db
+*.db-wal
+*.db-shm
+automation.json
+backup_*/
+
+# ── Logs & captures ─────────────────────────────────────────────────────────
+*.log
+*_log.txt
+*_out.txt
+bridge_log.txt
+dash_log.txt
+solar_log.txt
+diag_out.txt
+frame_out.txt
+passive_out.txt
+dual_bms.txt
+
+# ── Big / private assets ────────────────────────────────────────────────────
+solarassisant/
+*.img
+
+# ── Python ──────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+venv/
+.venv/
+
+# ── OS / editor ─────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

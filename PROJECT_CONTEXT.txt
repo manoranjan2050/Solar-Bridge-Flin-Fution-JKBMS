@@ -17,7 +17,7 @@ HARDWARE
   Raspberry Pi 4
     IP: 192.168.1.32
     User: manoranjan
-    Pass: M@$ter@2050
+    Pass: <PI_PASSWORD>
     OS: Raspberry Pi OS Lite (Debian 13 Trixie, aarch64)
 
   Flin Fution Inverter (Voltronic/Axpert clone, 5kVA hybrid)
@@ -35,7 +35,7 @@ HARDWARE
     IP: 192.168.1.82
     MQTT broker port: 1883
     MQTT user: manoranjan
-    MQTT pass: M@$ter@1991
+    MQTT pass: <MQTT_PASSWORD>
 
 
 FILES ON PI
@@ -79,7 +79,7 @@ HOW TO DEPLOY CHANGES
 
   Or manually:
        scp solar_bridge.py manoranjan@192.168.1.32:/opt/solar-bridge/
-       ssh manoranjan@192.168.1.32 "echo 'M@$ter@2050' | sudo -S systemctl restart solar-bridge"
+       ssh manoranjan@192.168.1.32 "echo '<PI_PASSWORD>' | sudo -S systemctl restart solar-bridge"
 
 
 WHAT IS WORKING (confirmed 2026-06-07)
@@ -212,7 +212,7 @@ CONVERSATION HISTORY SUMMARY
      setup.sh, service file, etc.)
 
   4. User provided SSH credentials. Connected via paramiko Python library
-     (password has special chars: M@$ter@2050)
+     (password has special chars: <PI_PASSWORD>)
 
   5. Ran setup.sh on Pi: installed Python venv, pyserial, paho-mqtt,
      udev rules, systemd service
@@ -221,7 +221,7 @@ CONVERSATION HISTORY SUMMARY
      - 0665:5161 = inverter → /dev/hidraw0
      - 1a86:7523 = JKBMS RS485 → /dev/ttyUSB0
 
-  7. Configured MQTT: HA at 192.168.1.82, user manoranjan, pass M@$ter@1991
+  7. Configured MQTT: HA at 192.168.1.82, user manoranjan, pass <MQTT_PASSWORD>
 
   8. Fixed inverter HID protocol:
      - Original code treated first byte of each HID packet as count (wrong)
