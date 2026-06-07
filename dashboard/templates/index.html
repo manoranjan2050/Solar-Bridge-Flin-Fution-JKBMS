@@ -1194,11 +1194,16 @@ footer{height:var(--ftr);background:var(--bg1);border-top:1px solid var(--border
       <div class="form-group"><label>High battery temp (°C)</label><input id="n-al-bt" type="number" placeholder="50"></div>
       <div class="form-group"><label>High inverter temp (°C)</label><input id="n-al-it" type="number" placeholder="75"></div>
       <div class="form-group"><label>Cell imbalance (V)</label><input id="n-al-cd" type="number" step="0.01" placeholder="0.1"></div>
+      <div class="form-group"><label>Overload warning (%)</label><input id="n-al-ovl" type="number" placeholder="90"></div>
+      <div class="form-group"><label>Battery over-voltage (V)</label><input id="n-al-bv" type="number" step="0.1" placeholder="57.0"></div>
+      <div class="form-group"><label>Cell over-voltage (V)</label><input id="n-al-cov" type="number" step="0.01" placeholder="3.65"></div>
       <div class="form-group"><label>Repeat cooldown (s)</label><input id="n-al-cd2" type="number" placeholder="1800"></div>
     </div>
-    <div style="display:flex;gap:14px;margin-top:12px;flex-wrap:wrap">
+    <div style="display:flex;gap:16px;margin-top:12px;flex-wrap:wrap">
       <label style="font-size:.85rem"><input type="checkbox" id="n-al-grid"> Grid loss/restore</label>
       <label style="font-size:.85rem"><input type="checkbox" id="n-al-fault"> Inverter faults</label>
+      <label style="font-size:.85rem"><input type="checkbox" id="n-al-overload"> Overload</label>
+      <label style="font-size:.85rem"><input type="checkbox" id="n-al-full"> Battery full (100%)</label>
     </div>
   </div>
 
@@ -2044,7 +2049,10 @@ async function loadNotify() {
   ck('n-al-en','alerts_enabled'); tx('n-al-low','alerts_low_soc','20'); tx('n-al-crit','alerts_critical_soc','10');
   tx('n-al-bt','alerts_high_battery_temp','50'); tx('n-al-it','alerts_high_inverter_temp','75');
   tx('n-al-cd','alerts_high_cell_diff','0.1'); tx('n-al-cd2','alerts_cooldown','1800');
+  tx('n-al-ovl','alerts_overload_pct','90'); tx('n-al-bv','alerts_high_battery_voltage','57.0');
+  tx('n-al-cov','alerts_cell_overvoltage','3.65');
   ck('n-al-grid','alerts_notify_on_grid_loss'); ck('n-al-fault','alerts_notify_on_fault');
+  ck('n-al-overload','alerts_notify_on_overload'); ck('n-al-full','alerts_notify_on_full');
   document.getElementById('n-tg-token').dataset.changed='';
 }
 async function saveNotify() {
@@ -2057,7 +2065,10 @@ async function saveNotify() {
     alerts_enabled: C('n-al-en'), alerts_low_soc: V('n-al-low'), alerts_critical_soc: V('n-al-crit'),
     alerts_high_battery_temp: V('n-al-bt'), alerts_high_inverter_temp: V('n-al-it'),
     alerts_high_cell_diff: V('n-al-cd'), alerts_cooldown: V('n-al-cd2'),
+    alerts_overload_pct: V('n-al-ovl'), alerts_high_battery_voltage: V('n-al-bv'),
+    alerts_cell_overvoltage: V('n-al-cov'),
     alerts_notify_on_grid_loss: C('n-al-grid'), alerts_notify_on_fault: C('n-al-fault'),
+    alerts_notify_on_overload: C('n-al-overload'), alerts_notify_on_full: C('n-al-full'),
   };
   // Only send token if user typed a new one (avoid wiping stored token)
   const tok = document.getElementById('n-tg-token');

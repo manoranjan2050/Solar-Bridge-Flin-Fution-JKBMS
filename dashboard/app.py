@@ -399,8 +399,9 @@ NOTIFY_FIELDS = {
     "telegram": ["enabled", "token", "chat_id"],
     "email":    ["enabled", "smtp_host", "smtp_port", "username", "from_addr", "to_addr"],
     "alerts":   ["enabled", "low_soc", "critical_soc", "high_battery_temp",
-                 "high_inverter_temp", "high_cell_diff", "notify_on_grid_loss",
-                 "notify_on_fault", "cooldown"],
+                 "high_inverter_temp", "high_cell_diff", "overload_pct",
+                 "high_battery_voltage", "cell_overvoltage", "notify_on_grid_loss",
+                 "notify_on_fault", "notify_on_overload", "notify_on_full", "cooldown"],
 }
 
 @app.route("/api/notify_config")

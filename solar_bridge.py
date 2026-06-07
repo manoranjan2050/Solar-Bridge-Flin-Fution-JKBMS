@@ -870,7 +870,9 @@ def main():
     def get_state():
         return dict(latest_state)
 
-    notifier = Notifier(cfg, client, get_state) if Notifier else None
+    notifier = Notifier(cfg, client, get_state,
+                        control_cb=lambda k, v: apply_control(inverter, client, k, v)) \
+               if Notifier else None
     if notifier:
         notifier.start_bot()
     automation = (AutomationEngine(lambda k, v: apply_control(inverter, client, k, v))

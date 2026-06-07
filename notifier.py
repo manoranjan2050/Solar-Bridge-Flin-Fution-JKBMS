@@ -42,10 +42,12 @@ def _cfg_num(cfg, section, key, default=0.0):
 class Notifier:
     """Sends alerts and runs the Telegram command bot."""
 
-    def __init__(self, cfg, mqtt_client=None, state_getter=None):
+    def __init__(self, cfg, mqtt_client=None, state_getter=None, control_cb=None):
         self.cfg = cfg
         self.mqtt = mqtt_client
         self.state_getter = state_getter or (lambda: {})
+        # control_cb(ctrl_key:str, value:str) -> bool   (lets the bot drive the inverter)
+        self.control_cb = control_cb
 
         # Telegram
         self.tg_enabled = _cfg_bool(cfg, "telegram", "enabled")
@@ -68,8 +70,13 @@ class Notifier:
         self.high_bt     = _cfg_num(cfg, "alerts", "high_battery_temp", 50)
         self.high_it     = _cfg_num(cfg, "alerts", "high_inverter_temp", 75)
         self.high_cdiff  = _cfg_num(cfg, "alerts", "high_cell_diff", 0.1)
+        self.overload    = _cfg_num(cfg, "alerts", "overload_pct", 90)
+        self.high_bv     = _cfg_num(cfg, "alerts", "high_battery_voltage", 57.0)
+        self.cell_ov     = _cfg_num(cfg, "alerts", "cell_overvoltage", 3.65)
         self.on_grid     = _cfg_bool(cfg, "alerts", "notify_on_grid_loss", True)
         self.on_fault    = _cfg_bool(cfg, "alerts", "notify_on_fault", True)
+        self.on_full     = _cfg_bool(cfg, "alerts", "notify_on_full", True)
+        self.on_overload = _cfg_bool(cfg, "alerts", "notify_on_overload", True)
         self.cooldown    = _cfg_num(cfg, "alerts", "cooldown", 1800)
 
         self._active   = {}      # condition_key → fired timestamp (for cooldown + edge detection)
@@ -179,12 +186,39 @@ class Notifier:
                        f"Cell imbalance high: {cd:.3f}V",
                        f"Cell imbalance recovered: {cd:.3f}V")
 
+        # Battery over-voltage (pack)
+        bv = g("bank_battery_voltage") or g("inverter_battery_voltage")
+        if bv is not None:
+            self._edge("high_bv", bv >= self.high_bv, "warning",
+                       f"Battery over-voltage: {bv:.1f}V (≥{self.high_bv:.1f}V)",
+                       f"Battery voltage normal: {bv:.1f}V")
+
+        # Cell over-voltage (highest cell)
+        cmax = g("bank_cell_voltage_max") or g("bms1_cell_voltage_max")
+        if cmax is not None:
+            self._edge("cell_ov", cmax >= self.cell_ov, "warning",
+                       f"Cell over-voltage: {cmax:.3f}V (≥{self.cell_ov:.3f}V)",
+                       f"Cell voltage normal: {cmax:.3f}V")
+
+        # Inverter overload
+        if self.on_overload:
+            lp = g("inverter_load_percent")
+            if lp is not None:
+                self._edge("overload", lp >= self.overload, "warning",
+                           f"Inverter overload: load at {lp:.0f}% (≥{self.overload:.0f}%)",
+                           f"Load back to normal: {lp:.0f}%")
+
+        # Battery fully charged (info, edge-triggered)
+        if self.on_full and soc is not None:
+            self._edge("full", soc >= 100, "info",
+                       "🔋 Battery fully charged (100%)", None)
+
         if self.on_grid:
             gv = g("inverter_grid_voltage")
             if gv is not None:
                 self._edge("grid_loss", gv < 50, "warning",
-                           "Grid power lost (no AC input voltage)",
-                           "Grid power restored")
+                           "⚡ Grid power lost (running on solar/battery)",
+                           "⚡ Grid power restored")
 
         if self.on_fault:
             fault = g("inverter_fault_text")
@@ -233,11 +267,52 @@ class Notifier:
                     continue                      # ignore strangers
                 self._handle_cmd(text, chat)
 
+    # control command → (control_key, value mapper)
+    CONTROL_CMDS = {
+        "output":     ("output_priority",
+                       {"grid": "Grid first", "solar": "Solar first", "sbu": "SBU"}),
+        "charger":    ("charger_priority",
+                       {"grid": "Grid first", "solar": "Solar first",
+                        "solargrid": "Solar+Grid", "solar+grid": "Solar+Grid",
+                        "solaronly": "Solar only"}),
+        "maxcharge":  ("max_charge_current", None),       # numeric
+        "gridcharge": ("max_grid_charge_current", None),  # numeric
+        "float":      ("battery_float_voltage", None),    # numeric
+        "bulk":       ("battery_bulk_voltage", None),     # numeric
+    }
+
     def _handle_cmd(self, text: str, chat: str):
         s = self.state_getter() or {}
         g = lambda k, d="?": s.get(k, d)
-        cmd = text.split()[0].lstrip("/")
+        parts = text.split()
+        cmd = parts[0].lstrip("/")
+        arg = parts[1].lower() if len(parts) > 1 else ""
 
+        # ── Control commands ──────────────────────────────────────────────
+        if cmd in self.CONTROL_CMDS:
+            if not self.control_cb:
+                self._tg_send("⚠️ Inverter control is not available.", chat_id=chat)
+                return
+            ctrl_key, mapping = self.CONTROL_CMDS[cmd]
+            if not arg:
+                opts = "/".join(mapping.keys()) if mapping else "<number>"
+                self._tg_send(f"Usage: /{cmd} {opts}", chat_id=chat)
+                return
+            value = mapping.get(arg) if mapping else arg
+            if value is None:
+                self._tg_send(f"Unknown option '{arg}'. Try: " +
+                              "/".join(mapping.keys()), chat_id=chat)
+                return
+            try:
+                ok = self.control_cb(ctrl_key, str(value))
+            except Exception as e:
+                ok = False; log.warning("bot control failed: %s", e)
+            self._tg_send((f"✅ Set *{ctrl_key.replace('_',' ')}* = *{value}*"
+                           if ok else f"❌ Failed to set {ctrl_key} (inverter NAK)"),
+                          chat_id=chat)
+            return
+
+        # ── Status / info commands ────────────────────────────────────────
         if cmd in ("status", "start"):
             soc = g("bank_battery_soc", g("bms1_battery_soc", "?"))
             reply = (f"☀️ *Solar Status*\n"
@@ -248,6 +323,8 @@ class Notifier:
                      f"({g('inverter_battery_current')} A)\n"
                      f"SOC: {soc} %\n"
                      f"Mode: {g('inverter_device_mode')}")
+        elif cmd == "info":
+            reply = self._full_info(g)
         elif cmd == "pv":
             reply = (f"☀️ *Solar PV*\n"
                      f"Power: {g('inverter_pv_power')} W\n"
@@ -270,9 +347,47 @@ class Notifier:
             else:
                 reply = "📊 No energy data recorded yet today."
         else:
-            reply = ("🤖 *Solar Bridge Bot*\n"
-                     "/status — full overview\n"
+            reply = ("🤖 *Solar Bridge Bot*\n\n"
+                     "*Status*\n"
+                     "/info — full inverter + battery status\n"
+                     "/status — quick overview\n"
                      "/pv — solar production\n"
                      "/battery — battery details\n"
-                     "/today — today's energy")
+                     "/today — today's energy\n\n"
+                     "*Control*\n"
+                     "/output grid|solar|sbu\n"
+                     "/charger grid|solar|solargrid|solaronly\n"
+                     "/maxcharge <A>\n"
+                     "/gridcharge <A>\n"
+                     "/float <V>\n"
+                     "/bulk <V>")
         self._tg_send(reply, chat_id=chat)
+
+    def _full_info(self, g) -> str:
+        soc = g("bank_battery_soc", g("bms1_battery_soc", "?"))
+        te = db.get_today_energy() if db else {}
+        def kwh(k): return f"{te[k]:.2f}" if k in te else "—"
+        return (
+            "📋 *Full System Status*\n"
+            f"Mode: *{g('inverter_device_mode')}*  |  Fault: {g('inverter_fault_text','OK') or 'OK'}\n"
+            "\n☀️ *Solar*\n"
+            f"PV: {g('inverter_pv_power')} W  ({g('inverter_pv_input_voltage')}V / {g('inverter_pv_input_current')}A)\n"
+            "\n🏠 *Load / AC out*\n"
+            f"Load: {g('inverter_ac_out_active_power')} W  ({g('inverter_load_percent')}%)\n"
+            f"Output: {g('inverter_ac_out_voltage')}V  {g('inverter_ac_out_frequency')}Hz\n"
+            "\n⚡ *Grid*\n"
+            f"Grid: {g('inverter_grid_power')} W  ({g('inverter_grid_voltage')}V {g('inverter_grid_frequency')}Hz)\n"
+            "\n🔋 *Battery*\n"
+            f"SOC: {soc}%   {g('bank_battery_voltage', g('inverter_battery_voltage'))}V  {g('inverter_battery_current')}A\n"
+            f"BMS1: {g('bms1_battery_soc')}% {g('bms1_battery_voltage')}V  |  BMS2: {g('bms2_battery_soc')}% {g('bms2_battery_voltage')}V\n"
+            f"Cells: min {g('bank_cell_voltage_min', g('bms1_cell_voltage_min'))}V  max {g('bank_cell_voltage_max', g('bms1_cell_voltage_max'))}V  diff {g('bank_cell_voltage_diff', g('bms1_cell_voltage_diff'))}V\n"
+            f"Temp: MOS {g('bank_temp_mos')}°C  T1 {g('bank_temp_battery_1')}°C\n"
+            f"Remaining: {g('bank_total_remaining_capacity')} Ah  |  SOH: {g('bank_state_of_health')}%\n"
+            "\n📊 *Today*\n"
+            f"Solar {kwh('pv_kwh')}  Load {kwh('load_kwh')}  Grid {kwh('grid_in_kwh')} kWh\n"
+            "\n⚙️ *Settings*\n"
+            f"Output: {g('inverter_control_output_priority', g('inverter_output_source_priority'))}  |  "
+            f"Charger: {g('inverter_control_charger_priority', g('inverter_charger_source_priority'))}\n"
+            f"Max chg: {g('inverter_max_charge_current')}A  Grid chg: {g('inverter_max_ac_charge_current')}A\n"
+            f"Float: {g('inverter_battery_float_voltage')}V  Bulk: {g('inverter_battery_bulk_voltage')}V"
+        )

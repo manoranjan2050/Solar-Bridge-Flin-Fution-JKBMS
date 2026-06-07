@@ -28,8 +28,13 @@ critical_soc = 10          # % — critical when SOC drops below
 high_battery_temp = 50     # °C — warn when any pack temp exceeds
 high_inverter_temp = 75    # °C — warn when inverter heatsink exceeds
 high_cell_diff = 0.1       # V — warn when cell imbalance exceeds
+overload_pct = 90          # % — warn when inverter load exceeds
+high_battery_voltage = 57.0 # V — warn on battery over-voltage
+cell_overvoltage = 3.65    # V — warn when any cell exceeds
 notify_on_grid_loss = true # alert when grid power is lost / restored
 notify_on_fault = true     # alert on inverter fault/warning (QPIWS)
+notify_on_overload = true  # alert on inverter overload
+notify_on_full = true      # notify when battery reaches 100%
 cooldown = 1800            # seconds between repeat alerts for the same condition
 
 [telegram]
