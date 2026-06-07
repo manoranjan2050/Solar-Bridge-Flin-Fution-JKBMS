@@ -23,7 +23,8 @@
       "Bash(taskkill //F //IM python.exe)",
       "Bash(rm -f solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm energy.json)",
       "Bash(cp /tmp/config.bak config.ini)",
-      "Bash(rm -f solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm energy.json automation.json)"
+      "Bash(rm -f solar_bridge.db solar_bridge.db-wal solar_bridge.db-shm energy.json automation.json)",
+      "Bash(python -c \"import paramiko; print\\('paramiko', paramiko.__version__\\)\")"
     ]
   }
 }

@@ -1020,7 +1020,9 @@ def main():
                     pub(client, "solar/inverter/fault_text", w["text"])
                     pub(client, "solar/inverter/fault_status",
                         "fault" if w["is_fault"] else ("warning" if w["text"] != "OK" else "ok"))
-                    latest_state["inverter_fault_text"] = w["text"] if w["text"] != "OK" else ""
+                    # Only real faults trigger the critical alert; warnings such as
+                    # "Line fail" (grid simply absent) show as a sensor but don't spam.
+                    latest_state["inverter_fault_text"] = w["text"] if w["is_fault"] else ""
                 last_qpiws = now
 
             # ── JKBMS (dual-unit) ────────────────────────────────────────
