@@ -1,6 +1,8 @@
 # ── Secrets (NEVER commit) ──────────────────────────────────────────────────
+# (gitignore does not support inline comments — keep patterns on their own line)
 deploy_secrets.py
-config.ini                 # contains live MQTT credentials on each machine
+# config.ini holds live MQTT credentials on each machine:
+config.ini
 
 # ── Runtime data / generated ────────────────────────────────────────────────
 energy.json
