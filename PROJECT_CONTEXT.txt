@@ -1,294 +1,120 @@
 ================================================================================
-  SOLAR BRIDGE PROJECT — FULL CONTEXT FOR SESSION RESUMPTION
-  Last updated: 2026-06-07
+  SOLAR BRIDGE — FULL PROJECT CONTEXT (read this first to resume)
+  Last updated: 2026-06-08
 ================================================================================
 
-WHAT THIS PROJECT IS
---------------------
-Replace paid "Solar Assistant" software with a self-hosted Python script that:
-  - Reads data from a Flin Fution solar inverter and JKBMS battery
-  - Publishes ALL sensors to MQTT with Home Assistant auto-discovery
-  - Allows changing inverter settings FROM Home Assistant (controls)
-  - Runs as a systemd service on Raspberry Pi 4, auto-starts on boot
+WHAT THIS IS
+------------
+A self-hosted replacement for "Solar Assistant". Runs on a Raspberry Pi. Reads a
+Flin Fution inverter (Voltronic/Axpert clone) over USB-HID and dual JK BMS over
+RS485, then provides:
+  - A full web dashboard (Flask + Socket.IO) on port 8080
+  - Home Assistant integration via MQTT auto-discovery (sensors + controls)
+  - A Telegram bot (status + control + daily summary)
+  - Alerts, automation rules, cost tracking, history, PWA, login, custom domain
 
+GitHub (PUBLIC): https://github.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS
+Branch: master. Commit/push directly to master (no PR flow needed unless asked).
 
-HARDWARE
---------
-  Raspberry Pi 4
-    IP: 192.168.1.32
-    User: manoranjan
-    Pass: <PI_PASSWORD>
-    OS: Raspberry Pi OS Lite (Debian 13 Trixie, aarch64)
+================================================================================
+HARDWARE / NETWORK
+================================================================================
+  Raspberry Pi 4 @ 192.168.1.32   (user: manoranjan, pass: see deploy_secrets.py)
+    OS: Raspberry Pi OS Lite (Debian Trixie/Bookworm, aarch64)
+  Inverter: Flin Fution 5kVA (Voltronic PI30) -> USB HID /dev/hidraw0 (0665:5161)
+  Battery: 2x JK BMS 16S LiFePO4 (100Ah each) -> CH340 USB-RS485 /dev/ttyUSB0 (1a86:7523)
+  Home Assistant / MQTT broker @ 192.168.1.82:1883
+    MQTT user: manoranjan2050   pass: see deploy_secrets.py  (NOT "manoranjan"!)
+  Dashboard login: user "manoranjan2050" (password set; see deploy_secrets/memory)
 
-  Flin Fution Inverter (Voltronic/Axpert clone, 5kVA hybrid)
-    USB connection → /dev/hidraw0
-    USB ID: 0665:5161 (Cypress Semiconductor / Voltronic USB HID)
-    Protocol: Voltronic PI30
+  >>> Real credentials are in deploy_secrets.py (git-ignored) and the auto-memory
+      file. They are NOT in any committed file (placeholders only).
 
-  JK BMS (16-cell LiFePO4, new protocol)
-    RS485 via CH340 USB adapter → /dev/ttyUSB0
-    USB ID: 1a86:7523 (QinHeng CH340)
-    Protocol: JK new broadcast (55 AA EB 90), passive mode (no request needed)
-    Cell voltages: ~3.31V each (16S, ~52.9V pack), SOC ~46%, Cycles=100
+================================================================================
+HOW TO WORK ON THIS (from Windows: C:\Users\MANORANJAN\soalrpi)
+================================================================================
+  - Edit files locally. Deploy to the Pi via SSH (paramiko) - see deploy.py, or
+    the ad-hoc paramiko scripts pattern used throughout (connect, sftp.put, restart).
+  - deploy_secrets.py holds HOST/USER/PASS for deploy.py (git-ignored).
+  - After changing solar_bridge.py / modules: restart solar-bridge.
+    After changing dashboard/*: restart solar-dashboard.
+      sudo systemctl restart solar-bridge solar-dashboard
+  - Watch logs: sudo journalctl -u solar-bridge -f
+  - The dashboard works WITHOUT MQTT (reads live_state.json, sends control via
+    control_queue.json). MQTT is only needed for Home Assistant.
+  - Verify visually with the Claude Preview MCP (run dashboard locally with a
+    sample live_state.json; note: the preview proxy can't fetch /api/* so inject
+    data via eval, or test endpoints directly with urllib on 127.0.0.1:8080).
+  - ALWAYS scan for secrets before committing (exclude deploy_secrets.py).
 
-  Home Assistant
-    IP: 192.168.1.82
-    MQTT broker port: 1883
-    MQTT user: manoranjan
-    MQTT pass: <MQTT_PASSWORD>
+================================================================================
+FILES (repo root unless noted)
+================================================================================
+  solar_bridge.py      Main collector. Polls inverter QPIGS(10s)/QPIRI(60s)/QMOD(15s)/
+                       QPIWS(30s) + BMS(10s). Publishes MQTT, accumulates energy,
+                       runs alerts+automation, writes live_state.json every 3s,
+                       processes control_queue.json, nightly DB purge + daily summary.
+  solar_db.py          SQLite (readings, daily_energy, alerts). energy_buckets(),
+                       pv_profile(), purge_old(), etc.
+  notifier.py          Telegram (alerts + command bot + /menu inline buttons +
+                       daily summary), e-mail, HA-via-MQTT alerts. Alert engine.
+  automation.py        Threshold + time rule engine (automation.json).
+  dashboard/app.py     Flask + Socket.IO web backend. Login, all /api/* endpoints,
+                       PWA routes (/sw.js, /manifest.webmanifest), backup/restore,
+                       cost config, CSV export, change-password.
+  dashboard/templates/ index.html (the whole SPA), login.html
+  dashboard/static/    PWA: manifest.webmanifest, sw.js, icon-192/512, apple-touch-icon
+  config.ini           Live config (git-ignored). Template: config.ini.example
+  install_all.sh       One-command installer (copies real files, deps, services,
+                       sudoers, avahi, journald cap, PWA icons). Self-contained.
+  setup_domain.sh      Optional nginx reverse proxy + Let's Encrypt for a public domain.
+  deploy.py            SSH deploy helper (reads deploy_secrets.py / env vars).
+  TODO.md              Roadmap - the OS image plan + feature ideas (READ for next work).
+  image/               Screenshots used in README.
+  Runtime (git-ignored): live_state.json, control_queue.json, energy.json,
+                         solar_bridge.db, automation.json
 
+  On the Pi everything lives in /opt/solar-bridge/ (+ venv). Two systemd services:
+  solar-bridge.service and solar-dashboard.service (both auto-start on boot).
 
-FILES ON PI
------------
-  /opt/solar-bridge/solar_bridge.py      ← main script (ALL logic here)
-  /opt/solar-bridge/config.ini           ← MQTT + device config
-  /opt/solar-bridge/energy.json          ← persistent kWh totals
-  /opt/solar-bridge/venv/                ← Python venv (pyserial, paho-mqtt)
-  /opt/solar-bridge/detect_devices.sh   ← USB device detector utility
-  /etc/systemd/system/solar-bridge.service
-  /etc/udev/rules.d/99-solar.rules
+================================================================================
+KEY PROTOCOL FACTS (hard-won - don't re-derive)
+================================================================================
+  INVERTER (Voltronic PI30, USB-HID, 8 raw bytes/read, Voltronic table CRC):
+    Set-command prefixes CONFIRMED for this unit (others return NAK):
+      output priority   = POP   (00=Grid,01=Solar,02=SBU)     [NOT POPCD]
+      charger priority  = PCP   (00=Grid,01=Solar,02=Sol+Grid,03=SolOnly)  [NOT PPCP]
+      max charge curr   = MUCHGC + 3-digit amps  (also used for grid charge)
+      float voltage     = PBFT + xx.x
+      bulk voltage      = PCVV + xx.x            [NOT PBCV]
+      shutdown voltage  = PSDV + xx.x
+      recharge voltage  = PBDV + xx.x
+    QPIRI field indices CONFIRMED:
+      [14]=max_charge  [16]=output_source_priority  [17]=charger_source_priority
+      (NOT [15]/[16] - was off by one)
 
+  JK BMS (new protocol 55 AA EB 90, type-02 frame, passive broadcast):
+    +6 cells(16xu16 mV) +144 MOS temp(u16) +150 pack V(u32 mV) +162/164 temp1/2(u16)
+    +173 SOC(uint8)  +174 remaining mAh(u32)  +178 design mAh(u32)  +182 cycles(u32)
+    +190 SOH(uint8). Two packs by byte +5: 0x00=BMS1, 0x05=BMS2.
+    (SOC was previously read at wrong offset 182 -> showed 46/36 instead of ~100.)
 
-FILES ON WINDOWS (working directory)
--------------------------------------
-  C:\Users\MANORANJAN\soalrpi\
-    solar_bridge.py       ← master copy, deploy to Pi when changed
-    config.ini            ← template (actual config on Pi already correct)
-    README.md             ← full project documentation
-    PROJECT_CONTEXT.txt   ← THIS FILE
-    deploy.py             ← Python SSH deploy script
-    setup.sh              ← fresh Pi install script
-    solar-bridge.service  ← systemd unit template
-    detect_devices.sh     ← device detection script
-    ha_manual_sensors.yaml ← manual HA YAML (fallback if autodiscovery fails)
-    energy.json           ← latest energy snapshot
-    solar_log.txt         ← last captured log
-    diag_out.txt          ← device diagnostic output
-    passive_out.txt       ← JKBMS passive capture
-    frame_out.txt         ← JKBMS frame analysis
-    solarassisant/        ← Solar Assistant .img file (unused, too complex to extract)
+================================================================================
+CURRENT STATUS (2026-06-08)
+================================================================================
+  EVERYTHING WORKING & DEPLOYED. MQTT connected to HA. Inverter control verified
+  (commands ACK, settings persist). BMS SOC correct. Dashboard, PWA, Telegram,
+  alerts, automation, cost tracking, CSV, backup/restore all live.
 
+  NEXT PLANNED WORK (user will resume later): build the standalone "Solar Bridge OS"
+  flashable image via pi-gen/CustomPiOS + first-boot WiFi wizard + overlay FS + OTA.
+  >>> See TODO.md for the full step-by-step plan and feature backlog. <<<
 
-HOW TO DEPLOY CHANGES
----------------------
-  1. Edit solar_bridge.py on Windows
-  2. Run deploy.py:
-       cd C:\Users\MANORANJAN\soalrpi
-       python deploy.py
-  3. It SSHes in, uploads file, restarts service, shows logs
-
-  Or manually:
-       scp solar_bridge.py manoranjan@192.168.1.32:/opt/solar-bridge/
-       ssh manoranjan@192.168.1.32 "echo '<PI_PASSWORD>' | sudo -S systemctl restart solar-bridge"
-
-
-WHAT IS WORKING (confirmed 2026-06-07)
----------------------------------------
-  INVERTER (Flin Fution):
-    ✓ PV voltage, current, power (~2700W in daytime)
-    ✓ AC load voltage, frequency, apparent + active power, load %
-    ✓ Grid voltage, frequency, estimated grid power
-    ✓ Battery voltage, charge/discharge current, capacity %
-    ✓ Bus voltage, heatsink temperature
-    ✓ Device mode (Grid/Battery/Line) via QMOD command
-    ✓ Energy totals: PV, load, grid, battery in/out (kWh, persistent)
-    ✓ Settings readout: float=54.0V, bulk=55.1V, shutdown=48V, max_chg=80A, grid_chg=20A
-    ✓ Serial number
-
-  BMS (JKBMS):
-    ✓ Pack voltage (~52.5V at 46% SOC)
-    ✓ SOC % (46%, sometimes reads 36% from wrong frame — see issues)
-    ✓ 16 individual cell voltages (~3.31V each = LiFePO4 midpoint)
-    ✓ Cell min/max/avg/diff
-    ✓ Temperature 1: ~33°C, Temperature 2: ~33.5°C
-    ✓ MOS temperature: ~35°C (offset +144 in frame)
-    ✓ Cycle count: 100
-    ✓ Remaining capacity (Ah) — sometimes unstable
-    ✓ Design capacity (Ah)
-    ✓ State of health %
-
-  HA CONTROLS (change inverter settings from HA dashboard):
-    ✓ Output source priority (select: Grid first / Solar first / SBU)
-    ✓ Charger source priority (select: Grid first / Solar first / Solar+Grid / Solar only)
-    ✓ Max charge current (number: 10–120A)
-    ✓ Max grid charge current (number: 2–60A)
-    ✓ Battery float voltage (number: 44.0–58.4V)
-    ✓ Battery bulk voltage (number: 44.0–58.4V)
-    ✓ Battery shutdown voltage (number: 40.0–48.0V)
-    ✓ Battery recharge voltage (number: 44.0–51.0V)
-
-
-KNOWN ISSUES AND TODO
-----------------------
-  1. BMS CURRENT = 0A
-     The JKBMS current reading is not decoded. In the type-02 frame at offset +158
-     there are bytes that change but the encoding (signed/unsigned, scale factor)
-     hasn't been confirmed. Need a reading where current is known (e.g., user says
-     "battery is charging at ~20A") then check frame byte at +158 to decode it.
-     Frame capture showed: 0x026E = 622 (when ~0.6A), 0xFFFFF370 (when discharging).
-     Likely int32 LE in mA, but needs verification.
-
-  2. BMS SOC FLUCTUATES (36% vs 46%)
-     The BMS broadcasts two frame types. Sometimes we catch type-01 instead of type-02
-     and the SOC offset doesn't apply. The read_all() now searches specifically for
-     55 AA EB 90 02 (type-02) which helps but BMS still occasionally sends only
-     type-01 in the 3.5s window we read.
-     Fix: read for longer, or parse both frame types.
-
-  3. BMS REMAINING CAPACITY UNSTABLE
-     Offset +154 (uint32 LE, mAh) sometimes gives correct ~170Ah but sometimes
-     gives huge values like 700-870Ah. This suggests the offset shifts depending on
-     which frame type or variant is received. Added sanity cap at 1000Ah.
-     May need to identify a more reliable offset or use a longer frame.
-
-  4. QPIRI CHARGER PRIORITY SHOWS "GRID FIRST"
-     User had configured "Solar first" in Solar Assistant. The inverter QPIRI field
-     [16] = 0 = Grid first. Either the inverter reverted its setting or the field
-     mapping is different for this firmware. The control to change it IS implemented
-     (PPCP01 = Solar first) so user can set it from HA dashboard.
-
-
-INVERTER PROTOCOL NOTES
-------------------------
-  Voltronic PI30 protocol over USB HID:
-  - HID writes: 9 bytes (0x00 report-ID + 8 data bytes)
-  - HID reads: 8 bytes of raw ASCII response per packet (NO count prefix byte)
-    IMPORTANT: this inverter (0665:5161) returns 8 raw bytes per read, unlike
-    some other Voltronic USB devices that return [count][data]. We include ALL
-    8 bytes from each read packet.
-  - CRC: Voltronic lookup table CRC (see _crc() in solar_bridge.py)
-    For QPIGS: CRC = b7a9 (confirmed working)
-  - Response format: starts with "(" followed by space-separated values
-  - Set commands: respond with "(ACK" or "(NAK"
-
-  QPIGI response field order (0-indexed after the "("):
-    0:grid_v, 1:grid_hz, 2:ac_out_v, 3:ac_out_hz, 4:ac_va, 5:ac_w,
-    6:load_%, 7:bus_v, 8:batt_v, 9:batt_chg_a, 10:batt_cap_%,
-    11:heatsink_C, 12:pv_a, 13:pv_v, 14:batt_scc_v, 15:batt_dis_a, 16:status_flags
-
-
-JKBMS PROTOCOL NOTES
---------------------
-  JK new protocol (55 AA EB 90):
-  - BMS broadcasts AUTOMATICALLY every ~1 second (passive mode, no request needed)
-  - Frame type 02 = cell info
-  - Old JK protocol (4E 57) is NOT used by this BMS
-  - Between new-protocol frames, BMS also sends old-format per-cell data
-    (pattern: XX 10 16 XX 00 01 02 00 00 CRC CRC, 11 bytes per cell)
-    This is normal and can be ignored.
-  - Reading strategy: drain buffer, wait 1.2s, read 700 bytes, search for 55AA02
-
-  JKBMS live values (2026-06-07 morning):
-    Cells: 3.308–3.391V (16 cells), pack: 52.5V
-    SOC: 46%, Cycles: 100, T1: 33°C, T2: 33.5°C, MOS: 35°C
-    Battery was discharging at ~30-60A during high load periods
-    Battery was charging at ~22A when PV surplus (~2700W PV, ~1300W load)
-
-
-HA MQTT TOPIC STRUCTURE
-------------------------
-  Sensors:     solar/inverter/<field>          solar/bms/<field>
-  Controls:    solar/inverter/control/<key>    (state)
-               solar/inverter/control/<key>/set (command)
-  Status:      solar/bridge/status             (online/offline LWT)
-  Discovery:   homeassistant/sensor/<uid>/config
-               homeassistant/select/<uid>/config
-               homeassistant/number/<uid>/config
-
-
-CONVERSATION HISTORY SUMMARY
-------------------------------
-  Session date: 2026-06-06 to 2026-06-07
-
-  1. User asked to set up solar monitoring on fresh Raspberry Pi OS Lite
-     (replacing Solar Assistant which was working but too expensive)
-
-  2. Identified hardware:
-     - Inverter: USB cable → USB HID (hidraw0)
-     - JKBMS: USB RS485 adapter
-     - HA already exists elsewhere, just need Pi to collect + push via MQTT
-
-  3. Created all scripts locally on Windows (solar_bridge.py, config.ini,
-     setup.sh, service file, etc.)
-
-  4. User provided SSH credentials. Connected via paramiko Python library
-     (password has special chars: <PI_PASSWORD>)
-
-  5. Ran setup.sh on Pi: installed Python venv, pyserial, paho-mqtt,
-     udev rules, systemd service
-
-  6. USB device detection showed:
-     - 0665:5161 = inverter → /dev/hidraw0
-     - 1a86:7523 = JKBMS RS485 → /dev/ttyUSB0
-
-  7. Configured MQTT: HA at 192.168.1.82, user manoranjan, pass <MQTT_PASSWORD>
-
-  8. Fixed inverter HID protocol:
-     - Original code treated first byte of each HID packet as count (wrong)
-     - This inverter returns 8 raw bytes per packet (no count prefix)
-     - Fixed: include ALL 8 bytes from each HID read packet
-     - Fixed CRC: use Voltronic lookup table, not XOR CRC (was getting NAK)
-
-  9. Fixed JKBMS protocol:
-     - Original code used old JK protocol (4E 57) but this BMS uses new
-       protocol (55 AA EB 90) and broadcasts passively
-     - Ran passive capture: confirmed type-02 frames with cell voltages
-       at offset +6, uint16 LE in mV
-     - Found pack voltage at offset +150, temps at +162/+164, SOC at +182
-
-  10. Inverter now fully working, reading correct data:
-      PV ~2700W, Load ~1300-4700W, Battery 52-53V, charging/discharging
-
-  11. Added comprehensive feature set:
-      - QPIRI for settings, QMOD for device mode
-      - Energy accumulation (kWh totals, saved to JSON)
-      - HA MQTT controls (8 inverter settings changeable from HA)
-      - 34 inverter sensors + 17 BMS sensors with full HA auto-discovery
-
-  12. User mentioned Solar Assistant .img file in solarassisant/ folder
-      Attempted to extract with ext4/dissect Python libraries but API issues.
-      User said no need since things are working — skip extraction.
-
-  13. User provided list of all Solar Assistant sensors they want to match.
-      All implemented except: BMS current (encoding unknown), BMS SOC stable.
-
-
-NEXT SESSION — WHAT TO DO NEXT
---------------------------------
-  Priority 1: Fix BMS current reading (0A currently)
-    - Need user to say: "battery is [charging/discharging] at about X amps"
-    - Then SSH to Pi, run diagnostic to capture frame bytes at offset 158
-    - Decode as int32 LE in mA (hypothesis based on two data points)
-
-  Priority 2: Fix BMS SOC stability (36% vs 46%)
-    - Increase read window in read_all() to catch type-02 frame reliably
-    - Or: if only type-01 is available, parse it too for SOC
-
-  Priority 3: Verify all HA sensors appear correctly
-    - User should check HA → Settings → Devices & Services → MQTT
-    - Should see "Flin Fution Inverter" and "JK BMS" devices
-    - Each with all sensors and the control entities
-
-  Priority 4: Test controls
-    - From HA, try changing output priority from "Grid first" to "Solar first"
-    - Should see "(ACK" in logs
-    - Verify inverter responds
-
-
-HOW TO RESUME IN NEW CLAUDE SESSION
--------------------------------------
+================================================================================
+HOW TO RESUME IN A NEW SESSION
+================================================================================
   Tell Claude:
-  "I have a solar monitoring project on Raspberry Pi. Read the file
-  C:\Users\MANORANJAN\soalrpi\PROJECT_CONTEXT.txt for full context,
-  and C:\Users\MANORANJAN\soalrpi\README.md for technical details.
-  The service is running. I want to [fix BMS current / add X feature / etc.]"
-
-  Or just paste this file's content at the start of the conversation.
-
-  Key files Claude needs:
-    READ: solar_bridge.py (current version), PROJECT_CONTEXT.txt
-    DEPLOY: run deploy.py after any changes to solar_bridge.py
-
-================================================================================
-  END OF CONTEXT FILE
+  "Read C:\Users\MANORANJAN\soalrpi\PROJECT_CONTEXT.txt and TODO.md. The project
+   is fully working and deployed. I want to [build the OS image / add feature X]."
+  The auto-memory file also summarizes hardware, offsets, and known issues.
 ================================================================================
