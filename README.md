@@ -346,9 +346,16 @@ python deploy.py            # uploads bridge + modules, installs deps, restarts 
 
 ## 🛠️ Troubleshooting
 
+> 📖 **Full guide with every known issue & fix:** see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**
+> (MQTT/HA setup, "sensors Unknown", inverter command map, BMS offsets, port mistakes, and more).
+
+Quick reference:
+
 | Symptom | Cause / Fix |
 |---|---|
-| **Dashboard shows blank / `--` everywhere** | Bridge not running or no data file. `sudo systemctl status solar-bridge`; check Logs page. |
+| **HA: sensors show "Unknown"** (controls have values) | Restart bridge / reload MQTT integration — sensor values are now retained. |
+| **HA gets no data** | MQTT port must be **1883** (not 8123); user `manoranjan2050`; Mosquitto add-on **and** MQTT integration both enabled. |
+| **Dashboard shows blank / `--` everywhere** | Bridge not running or wrong device ports. `sudo systemctl status solar-bridge`; check Logs page. |
 | **Home Assistant gets no data; Logs show `rc=135 Not authorized`** | Wrong MQTT password in `config.ini [mqtt]`. Fix it (HA Mosquitto uses HA user accounts), then `sudo systemctl restart solar-bridge`. Dashboard/Telegram work regardless. |
 | **Inverter setting changes don't apply** | They go via the local command queue now — check Logs for `CMD … -> ACK`. `FAIL`/`NAK` = inverter rejected; `ACK` = applied. |
 | **"Save & Restart" / Reboot button: `sudo: a password is required`** | Passwordless sudo rule missing. Re-run `bash install_all.sh` (installs `/etc/sudoers.d/solar-bridge`). |
