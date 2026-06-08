@@ -173,9 +173,15 @@ def mqtt_connect(cfg, on_message_cb):
     client.on_message = on_message_cb
     client.will_set("solar/bridge/status", "offline", retain=True)
     client.reconnect_delay_set(min_delay=5, max_delay=60)
-    client.connect(host, port, keepalive=60)
-    client.loop_start()
-    log.info("MQTT connecting to %s:%s ...", host, port)
+    # connect_async + loop_start: never blocks or crashes if the broker is down at
+    # startup; the network loop keeps retrying in the background. The bridge keeps
+    # reading the inverter/BMS and serving the dashboard regardless of MQTT state.
+    try:
+        client.connect_async(host, port, keepalive=60)
+        client.loop_start()
+        log.info("MQTT connecting to %s:%s (async, will retry if broker is down) ...", host, port)
+    except Exception as e:
+        log.error("MQTT setup error (continuing without MQTT): %s", e)
     return client
 
 
