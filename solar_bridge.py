@@ -143,7 +143,7 @@ _cmd_lock = threading.Lock()  # serialise HID access between poll and command
 
 CTRL_TOPIC = "solar/inverter/control"
 
-def mqtt_connect(cfg, on_message_cb):
+def mqtt_connect(cfg, on_message_cb, on_connect_cb=None):
     host     = cfg_str(cfg, "mqtt", "host")
     port     = cfg_int(cfg, "mqtt", "port", 1883)
     user     = cfg_str(cfg, "mqtt", "username")
@@ -160,6 +160,11 @@ def mqtt_connect(cfg, on_message_cb):
             log.info("MQTT connected to %s:%s as %r", host, port, user or "(anonymous)")
             cl.subscribe(f"{CTRL_TOPIC}/+/set")
             cl.publish("solar/bridge/status", "online", retain=True)
+            # (Re)publish HA discovery on EVERY connect — fixes the connect_async
+            # race and means discovery is restored automatically after a broker restart.
+            if on_connect_cb:
+                try: on_connect_cb(cl)
+                except Exception as e: log.warning("on_connect callback failed: %s", e)
         else:
             log.error("MQTT CONNECTION REFUSED by %s:%s (rc=%s, %s). "
                       "Check [mqtt] username/password in config.ini!",
@@ -870,11 +875,14 @@ def main():
         if client_holder[0]:
             make_on_message(inverter, client_holder[0])(client, userdata, msg)
 
-    client = mqtt_connect(cfg, on_msg)
-    client_holder[0] = client
+    # Publish HA discovery whenever (re)connected — runs inside on_connect so it
+    # works with connect_async and self-heals after a broker restart.
+    def on_conn(cl):
+        register_inverter_sensors(cl)
+        register_bms_sensors(cl)
 
-    register_inverter_sensors(client)
-    register_bms_sensors(client)
+    client = mqtt_connect(cfg, on_msg, on_connect_cb=on_conn)
+    client_holder[0] = client
 
     # ── Add-ons: history DB, notifier (Telegram/e-mail/HA), automation ──────
     latest_state = {}                       # flat key→value mirror of MQTT topics
