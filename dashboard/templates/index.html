@@ -99,53 +99,71 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 .load .stat-val{color:var(--load)}
 
 /* ── POWER FLOW ── */
-.flow-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:14px;padding:24px;box-shadow:var(--shadow)}
-.flow{display:grid;grid-template-columns:1fr 80px 1fr;grid-template-rows:1fr 80px 1fr;
-  gap:0;max-width:520px;margin:0 auto;align-items:center;justify-items:center}
-.flow-node{background:var(--bg3);border:2px solid var(--border);border-radius:16px;
-  padding:16px;text-align:center;width:130px;min-height:90px;display:flex;flex-direction:column;
-  align-items:center;justify-content:center;gap:6px;position:relative;transition:.3s}
-.flow-node.active-node{box-shadow:0 0 20px var(--node-color,#fff3)}
-.flow-node i{font-size:1.6rem}
-.flow-node .nval{font-size:1.15rem;font-weight:700}
-.flow-node .nlbl{font-size:.7rem;color:var(--text3)}
-.fn-solar{--node-color:rgba(245,158,11,.3);border-color:var(--solar)}
-.fn-solar i,.fn-solar .nval{color:var(--solar)}
-.fn-battery{--node-color:rgba(16,185,129,.3);border-color:var(--battery)}
-.fn-battery i,.fn-battery .nval{color:var(--battery)}
-.fn-grid{--node-color:rgba(59,130,246,.3);border-color:var(--grid)}
-.fn-grid i,.fn-grid .nval{color:var(--grid)}
-.fn-load{--node-color:rgba(244,63,94,.3);border-color:var(--load)}
-.fn-load i,.fn-load .nval{color:var(--load)}
-.flow-arrow{display:flex;align-items:center;justify-content:center;font-size:1.3rem;color:var(--text3)}
-.flow-arrow.h{flex-direction:row}
-.flow-arrow.v{flex-direction:column}
-.arrow-line{background:var(--border);border-radius:2px;transition:background .4s,box-shadow .4s}
-.arrow-line.h{width:40px;height:3px}
-.arrow-line.v{width:3px;height:40px}
-.flow-center{display:flex;align-items:center;justify-content:center}
-/* animated flow dots — direction & visibility driven by .active/.rev on the parent arrow */
-@keyframes flowH{0%{left:0;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:100%;opacity:0}}
-@keyframes flowHr{0%{left:100%;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:0;opacity:0}}
-@keyframes flowV{0%{top:0;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:100%;opacity:0}}
-@keyframes flowVr{0%{top:100%;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:0;opacity:0}}
-.flow-arrow.h{position:relative}
-.flow-arrow.v{position:relative}
-.arrow-dot{position:absolute;width:9px;height:9px;border-radius:50%;opacity:0;
-  box-shadow:0 0 8px 2px currentColor;top:50%;transform:translate(-50%,-50%)}
-.arrow-dot.v{left:50%;top:0;transform:translate(-50%,-50%)}
-.flow-arrow.active .arrow-dot{animation:flowH 1.4s linear infinite}
-.flow-arrow.active.rev .arrow-dot{animation:flowHr 1.4s linear infinite}
-.flow-arrow.v.active .arrow-dot{animation:flowV 1.4s linear infinite}
-.flow-arrow.v.active.rev .arrow-dot{animation:flowVr 1.4s linear infinite}
-.flow-arrow.active .arrow-line{background:linear-gradient(90deg,var(--border),currentColor,var(--border));
-  box-shadow:0 0 10px -1px currentColor}
-.flow-node{transition:box-shadow .4s,border-color .4s}
-.flow-node.live{box-shadow:0 0 18px -4px var(--node-color, #0000)}
-.flow-node.fn-solar.live{box-shadow:0 0 22px -4px var(--solar)}
-.flow-node.fn-battery.live{box-shadow:0 0 22px -4px var(--battery)}
-.flow-node.fn-grid.live{box-shadow:0 0 22px -4px var(--grid)}
-.flow-node.fn-load.live{box-shadow:0 0 22px -4px var(--load)}
+/* ── POWER FLOW (cross layout: solar↑ grid← INV →load battery↓) ── */
+.pflow{position:relative;width:100%;max-width:440px;margin:6px auto 0;aspect-ratio:1/1}
+.pf-node,.pf-inv{position:absolute;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;text-align:center;transition:box-shadow .4s,border-color .4s,transform .3s}
+.pf-node{width:104px;height:104px;border-radius:50%;background:var(--bg3);
+  border:2px solid var(--border);gap:1px;z-index:2;cursor:pointer}
+.pf-node:hover,.pf-inv:hover{filter:brightness(1.18);border-color:#fff6}
+.pf-inv{width:118px;height:118px;border-radius:18px;background:var(--bg3);
+  border:2px solid var(--border);gap:1px;top:50%;left:50%;transform:translate(-50%,-50%);z-index:3;cursor:pointer}
+.pf-node i,.pf-inv i{font-size:1.5rem;margin-bottom:2px}
+.pf-w{font-size:1.05rem;font-weight:800;line-height:1.1}
+.pf-s{font-size:.66rem;color:var(--text3)}
+.pf-name{font-size:.6rem;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+/* positions */
+.pf-solar  {top:0;          left:50%;transform:translateX(-50%)}
+.pf-battery{bottom:0;       left:50%;transform:translateX(-50%)}
+.pf-grid   {top:50%;        left:0;  transform:translateY(-50%)}
+.pf-load   {top:50%;        right:0; transform:translateY(-50%)}
+/* colours */
+.pf-solar  {border-color:var(--solar)}   .pf-solar i,.pf-solar .pf-w  {color:var(--solar)}
+.pf-battery{border-color:var(--battery)} .pf-battery i,.pf-battery .pf-w{color:var(--battery)}
+.pf-grid   {border-color:var(--grid)}    .pf-grid i,.pf-grid .pf-w    {color:var(--grid)}
+.pf-load   {border-color:var(--load)}    .pf-load i,.pf-load .pf-w    {color:var(--load)}
+.pf-inv i,.pf-inv-mode{color:var(--solar)}
+.pf-inv-mode{font-size:.82rem;font-weight:700}
+.pf-inv-sub{font-size:.66rem;color:var(--text3)}
+/* live glow when a node is active */
+.pf-node.live.pf-solar  {box-shadow:0 0 22px -3px var(--solar)}
+.pf-node.live.pf-battery{box-shadow:0 0 22px -3px var(--battery)}
+.pf-node.live.pf-grid   {box-shadow:0 0 22px -3px var(--grid)}
+.pf-node.live.pf-load   {box-shadow:0 0 22px -3px var(--load)}
+.pf-inv.live{box-shadow:0 0 26px -4px var(--solar)}
+
+/* connecting lines from centre to each node */
+.pf-line{position:absolute;background:var(--border);border-radius:3px;z-index:1;overflow:visible}
+.pf-line.pf-top,.pf-line.pf-bottom{width:4px;left:50%;transform:translateX(-50%);height:32%}
+.pf-line.pf-top   {top:18%}
+.pf-line.pf-bottom{top:50%}
+.pf-line.pf-left,.pf-line.pf-right{height:4px;top:50%;transform:translateY(-50%);width:32%}
+.pf-line.pf-left  {left:18%}
+.pf-line.pf-right {left:50%}
+.pf-line.active{background:linear-gradient(var(--ln,90deg),var(--border),var(--c,#fff),var(--border));
+  box-shadow:0 0 10px -2px var(--c,#fff)}
+.pf-top.active,.pf-bottom.active{--ln:180deg}
+/* flowing dot */
+.pf-dot{position:absolute;width:10px;height:10px;border-radius:50%;opacity:0;
+  background:var(--c,#fff);box-shadow:0 0 9px 2px var(--c,#fff)}
+.pf-top .pf-dot,.pf-bottom .pf-dot{left:50%;transform:translateX(-50%)}
+.pf-left .pf-dot,.pf-right .pf-dot{top:50%;transform:translateY(-50%)}
+/* colours per line */
+.pf-top   {--c:var(--solar)}
+.pf-bottom{--c:var(--battery)}
+.pf-left  {--c:var(--grid)}
+.pf-right {--c:var(--load)}
+/* animations: forward = toward inverter/out; rev flips */
+@keyframes pfV {0%{top:-6px;opacity:0}15%{opacity:1}85%{opacity:1}100%{top:calc(100% - 4px);opacity:0}}
+@keyframes pfVr{0%{top:calc(100% - 4px);opacity:0}15%{opacity:1}85%{opacity:1}100%{top:-6px;opacity:0}}
+@keyframes pfH {0%{left:-6px;opacity:0}15%{opacity:1}85%{opacity:1}100%{left:calc(100% - 4px);opacity:0}}
+@keyframes pfHr{0%{left:calc(100% - 4px);opacity:0}15%{opacity:1}85%{opacity:1}100%{left:-6px;opacity:0}}
+.pf-top.active    .pf-dot{animation:pfV 1.4s linear infinite}      /* solar → inverter (down) */
+.pf-bottom.active .pf-dot{animation:pfV 1.4s linear infinite}      /* inverter → battery (down, charging) */
+.pf-bottom.active.rev .pf-dot{animation:pfVr 1.4s linear infinite} /* battery → inverter (up, discharging) */
+.pf-left.active   .pf-dot{animation:pfH 1.4s linear infinite}      /* grid → inverter (right, import) */
+.pf-left.active.rev .pf-dot{animation:pfHr 1.4s linear infinite}   /* inverter → grid (left, export) */
+.pf-right.active  .pf-dot{animation:pfH 1.4s linear infinite}      /* inverter → load (right) */
 
 /* ── SOC GAUGE (animated) ── */
 @property --soc-pct{syntax:'<percentage>';initial-value:0%;inherits:false}
@@ -481,53 +499,50 @@ aside#sidebar{display:flex;flex-direction:column}
 
   <!-- Power Flow + Energy -->
   <div class="grid g2" style="margin-bottom:20px">
-    <div class="flow-wrap">
-      <div class="card-title"><i class="fa fa-arrows-alt"></i> Power Flow</div>
-      <div class="flow">
-        <!-- Row 1 -->
-        <div class="flow-node fn-solar" id="fn-solar">
+    <div class="card">
+      <div class="card-title"><i class="fa fa-arrows-turn-to-dots"></i> Power Flow</div>
+      <div class="pflow">
+        <!-- connecting lines (behind nodes) -->
+        <div class="pf-line pf-top"    id="pf-l-solar"><span class="pf-dot"></span></div>
+        <div class="pf-line pf-bottom" id="pf-l-batt"><span class="pf-dot"></span></div>
+        <div class="pf-line pf-left"   id="pf-l-grid"><span class="pf-dot"></span></div>
+        <div class="pf-line pf-right"  id="pf-l-load"><span class="pf-dot"></span></div>
+
+        <!-- nodes (tap to open detail page) -->
+        <div class="pf-node pf-solar" id="pf-solar" onclick="showNav('solar')" title="Solar details">
           <i class="fa fa-solar-panel"></i>
-          <div class="nval" id="fn-pv">-- W</div>
-          <div class="nlbl" id="fn-pv-v">-- V</div>
+          <div class="pf-w" id="pf-solar-w">-- W</div>
+          <div class="pf-s" id="pf-solar-v">-- V</div>
+          <div class="pf-name">Solar</div>
         </div>
-        <div class="flow-arrow h" id="fa-pv-inv">
-          <div class="arrow-line h"></div>
-          <div class="arrow-dot" style="background:var(--solar);color:var(--solar)"></div>
-          <div class="arrow-line h"></div>
-        </div>
-        <div class="flow-node fn-load" id="fn-load">
-          <i class="fa fa-plug"></i>
-          <div class="nval" id="fn-load">-- W</div>
-          <div class="nlbl" id="fn-load-pct">--%</div>
-        </div>
-        <!-- Row 2 -->
-        <div class="flow-arrow v" id="fa-batt-inv">
-          <div class="arrow-line v"></div>
-          <div class="arrow-dot v" style="background:var(--battery);color:var(--battery)"></div>
-          <div class="arrow-line v"></div>
-        </div>
-        <div class="flow-center">
-          <div style="width:40px;height:40px;background:var(--bg3);border-radius:50%;
-            display:flex;align-items:center;justify-content:center;color:var(--text3);font-size:.75rem">
-            INV
-          </div>
-        </div>
-        <div class="flow-arrow v" id="fa-grid-inv">
-          <div class="arrow-line v"></div>
-          <div class="arrow-dot v" style="background:var(--grid);color:var(--grid)"></div>
-          <div class="arrow-line v"></div>
-        </div>
-        <!-- Row 3 -->
-        <div class="flow-node fn-battery" id="fn-battery">
-          <i class="fa fa-battery-three-quarters"></i>
-          <div class="nval" id="fn-batt-v">-- V</div>
-          <div class="nlbl" id="fn-batt-soc">--%</div>
-        </div>
-        <div></div>
-        <div class="flow-node fn-grid" id="fn-grid">
+
+        <div class="pf-node pf-grid" id="pf-grid" onclick="showNav('solar')" title="Grid details">
           <i class="fa fa-tower-cell"></i>
-          <div class="nval" id="fn-grid-p">-- W</div>
-          <div class="nlbl" id="fn-grid-v">-- V</div>
+          <div class="pf-w" id="pf-grid-w">-- W</div>
+          <div class="pf-s" id="pf-grid-v">-- V</div>
+          <div class="pf-name">Grid</div>
+        </div>
+
+        <!-- center inverter (square) -->
+        <div class="pf-inv" id="pf-inv" onclick="showNav('inverter')" title="Inverter details">
+          <i class="fa fa-bolt"></i>
+          <div class="pf-inv-mode" id="pf-inv-mode">--</div>
+          <div class="pf-inv-sub" id="pf-inv-sub">-- °C</div>
+          <div class="pf-name">Inverter</div>
+        </div>
+
+        <div class="pf-node pf-load" id="pf-load" onclick="showNav('inverter')" title="Load details">
+          <i class="fa fa-plug"></i>
+          <div class="pf-w" id="pf-load-w">-- W</div>
+          <div class="pf-s" id="pf-load-pct">--%</div>
+          <div class="pf-name">Load</div>
+        </div>
+
+        <div class="pf-node pf-battery" id="pf-battery" onclick="showNav('battery')" title="Battery details">
+          <i class="fa fa-car-battery"></i>
+          <div class="pf-w" id="pf-batt-soc">--%</div>
+          <div class="pf-s" id="pf-batt-v">-- V</div>
+          <div class="pf-name">Battery</div>
         </div>
       </div>
     </div>
@@ -1454,6 +1469,12 @@ function setBadge(ok) {
 }
 
 // ── Navigation ────────────────────────────────────────────────────────────
+// jump to a page from a non-nav element (e.g. power-flow node) and highlight its sidebar item
+function showNav(id) {
+  const items = [...document.querySelectorAll('.nav-item')];
+  const target = items.find(a => (a.getAttribute('onclick')||'').includes("showPage('"+id+"')"));
+  if (target) target.click(); else showPage(id);
+}
 function showPage(id) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
@@ -1519,15 +1540,17 @@ function updateAll() {
   v('ov-grid-power', grid_w !== null ? grid_w+'W' : '--W');
   v('ov-grid-v',   f(D['inverter_grid_voltage'],1)+'V / '+f(D['inverter_grid_frequency'],1)+'Hz');
 
-  // Flow nodes
-  v('fn-pv',      pv_w ? pv_w+'W' : '--W');
-  v('fn-pv-v',    f(D['inverter_pv_input_voltage'],1)+'V');
-  v('fn-load',    load_w ? load_w+'W' : '--W');
-  v('fn-load-pct', pct(D['inverter_load_percent'])+'%');
-  v('fn-batt-v',  batt_v ? batt_v+'V' : '--V');
-  v('fn-batt-soc', (soc||'--')+'%');
-  v('fn-grid-p',  grid_w !== null ? grid_w+'W' : '--W');
-  v('fn-grid-v',  f(D['inverter_grid_voltage'],1)+'V');
+  // Power-flow nodes (cross layout)
+  v('pf-solar-w', pv_w ? pv_w+'W' : '0W');
+  v('pf-solar-v', f(D['inverter_pv_input_voltage'],1)+'V');
+  v('pf-load-w',  load_w ? load_w+'W' : '0W');
+  v('pf-load-pct', pct(D['inverter_load_percent'])+'%');
+  v('pf-batt-soc', (soc||'--')+'%');
+  v('pf-batt-v',  batt_v ? batt_v+'V' : '--V');
+  v('pf-grid-w',  grid_w !== null ? grid_w+'W' : '0W');
+  v('pf-grid-v',  f(D['inverter_grid_voltage'],1)+'V');
+  v('pf-inv-mode', D['inverter_device_mode'] || '--');
+  v('pf-inv-sub', f(D['inverter_inverter_heatsink_temp'],0)+'°C');
 
   // Energy boxes
   v('e-pv',   f(D['energy_pv_kwh'],2)+'kWh');
@@ -1659,21 +1682,24 @@ function updatePowerFlow() {
   const grid = parseFloat(D['inverter_grid_power']) || 0;
   const batA = parseFloat(D['inverter_battery_current']) || 0;  // + charging, - discharging
   const load = parseFloat(D['inverter_ac_out_active_power']) || 0;
-  const setArrow = (id, active, rev) => {
+  const line = (id, active, rev) => {
     const el = document.getElementById(id); if (!el) return;
     el.classList.toggle('active', !!active);
     el.classList.toggle('rev', !!rev);
   };
-  const setNode = (id, live) => {
+  const node = (id, live) => {
     const el = document.getElementById(id); if (el) el.classList.toggle('live', !!live);
   };
-  setArrow('fa-pv-inv',   pv > 15,            false);              // solar → system
-  setArrow('fa-batt-inv', Math.abs(batA) > 0.5, batA > 0.5);       // rev = charging (into battery)
-  setArrow('fa-grid-inv', grid > 15,          false);             // grid → system
-  setNode('fn-solar',   pv > 15);
-  setNode('fn-load',    load > 15);
-  setNode('fn-battery', Math.abs(batA) > 0.5);
-  setNode('fn-grid',    grid > 15);
+  const charging = batA > 0.5, discharging = batA < -0.5;
+  line('pf-l-solar', pv > 15, false);                 // solar → inverter (down)
+  line('pf-l-load',  load > 15, false);               // inverter → load (right)
+  line('pf-l-batt',  charging || discharging, discharging);  // down=charge, up(rev)=discharge
+  line('pf-l-grid',  grid > 15, false);               // grid → inverter (import)
+  node('pf-solar',   pv > 15);
+  node('pf-load',    load > 15);
+  node('pf-battery', charging || discharging);
+  node('pf-grid',    grid > 15);
+  node('pf-inv',     pv > 15 || load > 15 || grid > 15 || charging || discharging);
 }
 
 // Map a LiFePO4 cell voltage to an approximate state-of-charge %

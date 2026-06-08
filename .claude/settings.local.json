@@ -32,7 +32,8 @@
       "Bash(rm -f live_state.json energy.json automation.json control_queue.json solar_bridge.db*)",
       "Bash(cat)",
       "Bash(python /tmp/pi_dep5.py)",
-      "Bash(python /tmp/pi_dep_cost.py)"
+      "Bash(python /tmp/pi_dep_cost.py)",
+      "Bash(python /tmp/pi_pflow.py)"
     ]
   }
 }
