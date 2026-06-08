@@ -215,7 +215,12 @@ def ha_disc(client, uid, name, state_topic, unit=None,
 def pub(client, topic, value):
     if value is None:
         return
-    client.publish(topic, str(round(value, 3) if isinstance(value, float) else value))
+    # retain=True so Home Assistant (and any reconnecting client) gets the latest
+    # value immediately instead of showing "Unknown" until the next publish.
+    # The LWT (solar/bridge/status=offline) still marks entities unavailable if
+    # the bridge actually stops, so retained values never go stale-but-shown.
+    client.publish(topic, str(round(value, 3) if isinstance(value, float) else value),
+                   retain=True)
 
 # ---------------------------------------------------------------------------
 # Voltronic / Axpert inverter
