@@ -50,6 +50,11 @@ smtp_host = smtp.gmail.com
 smtp_port = 587
 username = # sending account
 password = # app password (not your login password)
-from_addr = 
+from_addr =
 to_addr = # comma-separated recipients
+
+[cost]
+currency = ₹              # currency symbol shown on the Details page
+import_rate = 8.0         # what you pay the grid per kWh
+export_rate = 3.0         # what you earn for exported kWh (0 if no feed-in)
 

@@ -40,7 +40,7 @@ INSTALL_DIR  = Path(__file__).parent
 
 def load_config():
     cfg = configparser.ConfigParser(interpolation=None)
-    cfg.read(CONFIG_PATH)
+    cfg.read(CONFIG_PATH, encoding="utf-8")
     return cfg
 
 def cfg_str(cfg, section, key, default=""):

@@ -140,6 +140,65 @@ class Notifier:
         except Exception as e:
             log.warning("Telegram send failed: %s", e)
 
+    def _tg_send_kb(self, text: str, keyboard, chat_id=None):
+        """Send a message with an inline-button keyboard."""
+        if not (self.tg_enabled and self.tg_token and requests):
+            return
+        chat = chat_id or self.tg_chat
+        if not chat:
+            return
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{self.tg_token}/sendMessage",
+                json={"chat_id": chat, "text": text, "parse_mode": "Markdown",
+                      "reply_markup": {"inline_keyboard": keyboard}},
+                timeout=10)
+        except Exception as e:
+            log.warning("Telegram keyboard send failed: %s", e)
+
+    def _tg_answer_cb(self, cb_id, text=""):
+        try:
+            requests.post(
+                f"https://api.telegram.org/bot{self.tg_token}/answerCallbackQuery",
+                json={"callback_query_id": cb_id, "text": text}, timeout=10)
+        except Exception:
+            pass
+
+    # The control menu shown by /menu and /control (button → callback data)
+    CONTROL_MENU = [
+        [("☀️ Output: Solar", "set:output_priority:Solar first"),
+         ("🔌 Output: Grid",  "set:output_priority:Grid first"),
+         ("🔋 Output: SBU",   "set:output_priority:SBU")],
+        [("⚡ Charge: Solar",      "set:charger_priority:Solar first"),
+         ("⚡ Charge: Solar+Grid", "set:charger_priority:Solar+Grid")],
+        [("⚡ Charge: Grid",  "set:charger_priority:Grid first"),
+         ("⚡ Charge: SolarOnly", "set:charger_priority:Solar only")],
+        [("📋 Refresh status", "info")],
+    ]
+
+    def _handle_callback(self, cq, chat):
+        data = cq.get("data", "")
+        cb_id = cq.get("id")
+        if data == "info":
+            self._tg_answer_cb(cb_id, "Refreshing…")
+            s = self.state_getter() or {}
+            self._tg_send(self._full_info(lambda k, d="?": s.get(k, d)), chat_id=chat)
+            return
+        if data.startswith("set:"):
+            try:
+                _, key, value = data.split(":", 2)
+            except ValueError:
+                self._tg_answer_cb(cb_id, "Bad command"); return
+            ok = False
+            if self.control_cb:
+                try: ok = self.control_cb(key, value)
+                except Exception as e: log.warning("cb control failed: %s", e)
+            self._tg_answer_cb(cb_id, ("✅ " if ok else "❌ ") + f"{value}")
+            self._tg_send((f"✅ Set *{key.replace('_',' ')}* = *{value}*"
+                           if ok else f"❌ Failed to set {key}"), chat_id=chat)
+            return
+        self._tg_answer_cb(cb_id)
+
     def _email_send(self, subject: str, body: str):
         if not (self.em_enabled and self.em_user and self.em_to):
             return
@@ -284,6 +343,15 @@ class Notifier:
                 continue
             for upd in r.get("result", []):
                 self._tg_offset = upd["update_id"] + 1
+                # ── inline-button taps ────────────────────────────────────
+                cq = upd.get("callback_query")
+                if cq:
+                    chat = str(cq.get("message", {}).get("chat", {}).get("id", ""))
+                    if self.tg_chat and chat != str(self.tg_chat):
+                        continue
+                    self._handle_callback(cq, chat)
+                    continue
+                # ── text messages ─────────────────────────────────────────
                 msg = upd.get("message") or {}
                 chat = str(msg.get("chat", {}).get("id", ""))
                 text = (msg.get("text") or "").strip().lower()
@@ -338,6 +406,13 @@ class Notifier:
                           chat_id=chat)
             return
 
+        # ── Tappable control menu ─────────────────────────────────────────
+        if cmd in ("menu", "control", "set"):
+            kb = [[{"text": t, "callback_data": d} for (t, d) in row]
+                  for row in self.CONTROL_MENU]
+            self._tg_send_kb("🎛️ *Inverter Control* — tap an option:", kb, chat_id=chat)
+            return
+
         # ── Status / info commands ────────────────────────────────────────
         if cmd in ("status", "start"):
             soc = g("bank_battery_soc", g("bms1_battery_soc", "?"))
@@ -381,12 +456,11 @@ class Notifier:
                      "/battery — battery details\n"
                      "/today — today's energy\n\n"
                      "*Control*\n"
+                     "/menu — 👈 tap-button control panel\n"
                      "/output grid|solar|sbu\n"
                      "/charger grid|solar|solargrid|solaronly\n"
-                     "/maxcharge <A>\n"
-                     "/gridcharge <A>\n"
-                     "/float <V>\n"
-                     "/bulk <V>")
+                     "/maxcharge <A> · /gridcharge <A>\n"
+                     "/float <V> · /bulk <V>")
         self._tg_send(reply, chat_id=chat)
 
     def _full_info(self, g) -> str:

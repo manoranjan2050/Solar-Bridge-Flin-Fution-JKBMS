@@ -100,10 +100,10 @@ cfg     = configparser.ConfigParser(interpolation=None)
 _mqtt   = None
 
 def load_cfg():
-    cfg.read(CFG_PATH)
+    cfg.read(CFG_PATH, encoding="utf-8")
 
 def save_cfg():
-    with open(CFG_PATH, "w") as f:
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
         cfg.write(f)
 
 def topic_key(topic: str) -> str:
@@ -488,15 +488,69 @@ def api_test_alert():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 # ── Energy statistics / forecast ─────────────────────────────────────────────────
+def _cost_cfg():
+    load_cfg()
+    g = lambda k, d: cfg.get("cost", k, fallback=d).split("#")[0].strip()
+    try: imp = float(g("import_rate", "8.0"))
+    except: imp = 8.0
+    try: exp = float(g("export_rate", "0"))
+    except: exp = 0.0
+    return {"currency": g("currency", "₹") or "₹", "import_rate": imp, "export_rate": exp}
+
+@app.route("/api/cost_config")
+@login_required
+def api_cost_get():
+    return jsonify(_cost_cfg())
+
+@app.route("/api/cost_config", methods=["POST"])
+@login_required
+def api_cost_save():
+    body = request.json or {}
+    load_cfg()
+    if not cfg.has_section("cost"):
+        cfg.add_section("cost")
+    for k in ("currency", "import_rate", "export_rate"):
+        if k in body:
+            cfg.set("cost", k, str(body[k]))
+    save_cfg()
+    return jsonify({"ok": True})
+
 @app.route("/api/energy_stats")
 @login_required
 def api_energy_stats():
     period = request.args.get("period", "day")
     limit  = int(request.args.get("limit", "30"))
     if not db:
-        return jsonify({"buckets": [], "totals": {}})
+        return jsonify({"buckets": [], "totals": {}, "cost": _cost_cfg()})
     return jsonify({"buckets": db.energy_buckets(period, limit),
-                    "totals":  db.energy_totals()})
+                    "totals":  db.energy_totals(),
+                    "cost":    _cost_cfg()})
+
+@app.route("/api/export_csv")
+@login_required
+def api_export_csv():
+    """Download energy stats as CSV (day/month/year), incl. cost & savings columns."""
+    from flask import Response
+    period = request.args.get("period", "day")
+    limit  = int(request.args.get("limit", "366"))
+    cc = _cost_cfg()
+    rows = db.energy_buckets(period, limit) if db else []
+    out = ["Period,Solar kWh,Load kWh,Grid In kWh,Grid Out kWh,Battery Charged kWh,"
+           "Battery Discharged kWh,Grid Cost,Solar Savings,Export Earnings,Net"]
+    for b in rows:
+        pv = b.get("pv_kwh",0) or 0; ld = b.get("load_kwh",0) or 0
+        gi = b.get("grid_in_kwh",0) or 0; go = b.get("grid_out_kwh",0) or 0
+        bi = b.get("batt_in_kwh",0) or 0; bo = b.get("batt_out_kwh",0) or 0
+        grid_cost = gi * cc["import_rate"]
+        savings   = max(0, ld - gi) * cc["import_rate"]   # load served by solar/battery
+        export    = go * cc["export_rate"]
+        net       = savings + export - 0                  # money not spent + earned
+        out.append(f"{b['bucket']},{pv:.2f},{ld:.2f},{gi:.2f},{go:.2f},{bi:.2f},{bo:.2f},"
+                   f"{grid_cost:.2f},{savings:.2f},{export:.2f},{net:.2f}")
+    csv = "\n".join(out)
+    fn = f"solar-bridge-{period}-{datetime.now():%Y%m%d}.csv"
+    return Response(csv, mimetype="text/csv",
+                    headers={"Content-Disposition": f"attachment; filename={fn}"})
 
 @app.route("/api/solar_forecast")
 @login_required
