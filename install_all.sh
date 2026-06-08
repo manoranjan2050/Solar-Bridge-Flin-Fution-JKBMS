@@ -104,6 +104,17 @@ sudo apt-get install -y \
     --no-install-recommends -qq
 ok "System packages installed"
 
+# Cap journald so logs can't fill the SD card on a long-running appliance
+sudo mkdir -p /etc/systemd/journald.conf.d
+sudo tee /etc/systemd/journald.conf.d/solar-bridge.conf > /dev/null << 'JCONF'
+[Journal]
+SystemMaxUse=200M
+SystemMaxFileSize=50M
+MaxRetentionSec=2week
+JCONF
+sudo systemctl restart systemd-journald 2>/dev/null || true
+ok "Log size capped (journald 200M)"
+
 # ── Step 2: Groups & udev ─────────────────────────────────────────────────────
 info "Step 2/7 — Configuring USB device access..."
 sudo usermod -aG dialout,plugdev "$USER_NAME"

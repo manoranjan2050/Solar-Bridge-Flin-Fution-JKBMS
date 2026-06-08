@@ -8,22 +8,98 @@ Home Assistant, and Telegram — all running locally on a Raspberry Pi.
 
 <sub>Built by <a href="https://github.com/manoranjan2050">Manoranjan</a> · <a href="https://manoranjan.dev">manoranjan.dev</a></sub>
 
+<br>
+
+![Solar Bridge Dashboard](image/main_page.jpg)
+
+<sub>Live overview with animated cross power-flow, energy totals & generation forecast</sub>
+
 </div>
 
 ---
 
 ## ✨ Features
 
-- 📊 **Web dashboard** — live power-flow, animated battery cells & SOC gauge, animated solar hero
+- 📊 **Web dashboard** — animated **cross power-flow** (solar/grid/inverter/load/battery), animated battery cells & SOC gauge, animated solar hero
+- 📱 **Installable PWA** — add to your phone's home screen, runs full-screen like a native app
 - 📈 **History & Details** — per-day/month/year energy, totals, self-sufficiency, "today vs typical" solar forecast
+- 💰 **Cost & savings tracking** — set your ₹/kWh tariff → daily/monthly grid cost, solar savings, export earnings, net benefit
+- 📤 **CSV export** — download day/month/year energy + cost data for spreadsheets
 - 🏠 **Home Assistant** — full MQTT auto-discovery of every sensor **and** inverter controls
-- 💬 **Telegram bot** — query status (`/info`, `/status`, `/pv`, `/battery`, `/today`) **and control the inverter** (`/output`, `/charger`, `/maxcharge`, …)
+- 💬 **Telegram bot** — status (`/info`, `/status`, `/pv`, `/battery`, `/today`), **tappable control panel** (`/menu`) or text control (`/output`, `/charger`, `/maxcharge`, …), and an optional **daily summary**
 - 🔔 **Smart alerts** — low/critical SOC, high temps, overload, over-voltage, cell imbalance, grid loss, faults, battery-full → Telegram / e-mail / Home Assistant
 - 🤖 **Automation rules** — "if SOC < 30% → charge from grid", time-based schedules
-- 🔐 **Optional login** — password-protect the dashboard
+- 🔐 **Optional login** — password-protect the dashboard (change credentials from the System page)
 - 🌐 **Custom domain** — `http://solar.local` (mDNS) out of the box, or `https://solar.yourdomain.com` via the bundled nginx setup
 - 💾 **Backup & restore** — one-click settings backup; restore on a new Pi
-- ⚙️ **Works even if MQTT is down** — dashboard data and inverter control use a local file bridge, so a broker outage never blanks your dashboard
+- ⚙️ **Works even if MQTT is down** — dashboard data **and** inverter control use a local file bridge, so a broker outage never blanks your dashboard
+- 🛡️ **Appliance-ready** — auto-purges old history, caps log size, auto-starts & self-restarts on boot
+
+---
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="image/solar_pv.jpg" alt="Solar PV page"><br>
+      <b>☀️ Solar PV</b><br><sub>Animated sun hero, today's generation curve, MPPT/AC/Grid detail</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="image/Battery_page.jpg" alt="Battery page"><br>
+      <b>🔋 Battery</b><br><sub>Animated SOC gauge + 32 live cell bars, dual-BMS detail</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="image/inverter_page.jpg" alt="Inverter page"><br>
+      <b>⚡ Inverter</b><br><sub>All live readings + current settings</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="image/History_page.jpg" alt="History page"><br>
+      <b>📈 History</b><br><sub>6h–7d charts of power, SOC & temperatures</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="image/details_page.jpg" alt="Details page"><br>
+      <b>📋 Details &amp; Cost</b><br><sub>Day/month/year energy, savings (₹/kWh) & CSV export</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="image/alert_system.jpg" alt="Alerts page"><br>
+      <b>🔔 Alerts</b><br><sub>Severity-coded alert history + test alert</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" align="center">
+      <img src="image/log_page.jpg" alt="Logs page"><br>
+      <b>📜 Live Logs</b><br><sub>Real-time bridge log (sensor reads, command ACKs, alerts)</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="image/main_page.jpg" alt="Overview page"><br>
+      <b>🎛️ Overview</b><br><sub>Animated cross power-flow + energy totals</sub>
+    </td>
+  </tr>
+</table>
+
+### 💬 Telegram Bot
+
+<table>
+  <tr>
+    <td width="33%" align="center">
+      <img src="image/telegram_menu.jpg" alt="Telegram control menu"><br>
+      <b>Tap-button control</b><br><sub><code>/menu</code></sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="image/telegram_info.jpg" alt="Telegram status"><br>
+      <b>Full status</b><br><sub><code>/info</code></sub>
+    </td>
+    <td width="33%" align="center">
+      <img src="image/telegram_otherinfo.jpg" alt="Telegram commands"><br>
+      <b>Quick queries</b><br><sub><code>/status</code> · <code>/pv</code> · <code>/today</code></sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -135,11 +211,14 @@ Controls exposed: output/charger priority, max charge & grid-charge current, flo
 
 | Command | Action |
 |---|---|
+| **`/menu`** | **Tappable button panel** for output/charger priority (easiest) |
 | `/output grid \| solar \| sbu` | Output source priority |
 | `/charger grid \| solar \| solargrid \| solaronly` | Charger source priority |
 | `/maxcharge 60` | Max charge current (A) |
 | `/gridcharge 20` | Max grid charge current (A) |
 | `/float 54.0` · `/bulk 55.1` | Battery voltages (V) |
+
+**Daily summary:** enable it on the Notifications page to get a once-a-day digest (solar, load, grid, peak PV, lowest SOC, self-sufficiency) at a time you choose.
 
 The bot only responds to your configured chat id.
 

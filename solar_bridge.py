@@ -851,6 +851,7 @@ def main():
     bms_baud     = cfg_int(cfg, "jkbms",   "baud",          115200)
     bms_cells    = cfg_int(cfg, "jkbms",   "cell_count",    16)
     bms_interval = cfg_int(cfg, "jkbms",   "poll_interval", 10)
+    history_days = cfg_int(cfg, "history", "retain_days", 90)   # DB retention (nightly purge)
 
     energy = EnergyTracker()
     inverter = VoltronicInverter(inv_port, inv_proto)
@@ -1191,6 +1192,12 @@ def main():
             # Midnight rollover for daily energy
             if energy.rollover_if_new_day():
                 daily_peak_pv = 0.0; daily_min_soc = 101.0
+                if db and history_days > 0:
+                    try:
+                        db.purge_old(days=history_days)   # keep the DB from growing forever
+                        log.info("DB purge: kept last %d days of history", history_days)
+                    except Exception as e:
+                        log.warning("DB purge failed: %s", e)
                 if notifier:
                     notifier.send("info", "📅 New day — daily energy counters reset.")
 
