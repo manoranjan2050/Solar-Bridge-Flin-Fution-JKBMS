@@ -953,10 +953,11 @@ def main():
                     pv_power    = round(pv_v * pv_i, 1)
                     bat_current = round(b_ci - b_di, 2)   # + = charging, - = discharging
                     bat_power   = round(b_v * bat_current, 1)
-                    # P_grid = P_load - P_pv - P_battery_discharge
-                    # When battery discharges bat_power < 0, so -bat_power > 0 (battery helping)
-                    bat_discharge_w = max(0.0, -bat_power)  # positive when battery discharges
-                    grid_power  = max(0.0, round(p_out - pv_power - bat_discharge_w, 1))
+                    # Energy balance:  P_grid = P_load + P_batt_charge - P_batt_discharge - P_pv
+                    # bat_power is signed (+ = charging draws extra power, - = discharging
+                    # supplies the load), so both cases are simply:  load + bat_power - pv.
+                    # Example: load 505W + grid-charging 1000W, no sun -> grid = 1505W (not 505W).
+                    grid_power  = max(0.0, round(p_out + bat_power - pv_power, 1))
 
                     pub(client, "solar/inverter/pv_power",    pv_power)
                     pub(client, "solar/inverter/battery_power", bat_power)
