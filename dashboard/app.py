@@ -92,6 +92,7 @@ def api_change_password():
     cfg.set("dashboard", "password", new_pwd)
     save_cfg()
     session.clear()   # force re-login with new credentials
+    notify_change("Dashboard login credentials were changed")
     return jsonify({"ok": True, "msg": "Credentials updated — please sign in again"})
 
 # ── In-memory state ──────────────────────────────────────────────────────────
@@ -145,6 +146,23 @@ def start_mqtt():
         _mqtt.loop_start()
     except Exception as e:
         print(f"MQTT connect failed: {e}")
+
+# ── Telegram notification for every settings change ──────────────────────────
+def notify_change(message: str):
+    """Fire a Telegram message whenever any setting is changed (best-effort,
+    runs in a background thread so the HTTP response is never delayed)."""
+    # capture remote_addr before leaving the request context
+    try: addr = request.remote_addr or ""
+    except Exception: addr = ""
+    def _bg():
+        try:
+            from notifier import Notifier
+            load_cfg()
+            n = Notifier(cfg, None)
+            n._tg_send(f"⚙️ *Setting changed*\n{message}" + (f"\n_from {addr}_" if addr else ""))
+        except Exception as e:
+            print(f"notify_change failed: {e}")
+    threading.Thread(target=_bg, daemon=True).start()
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 @app.route("/")
@@ -210,11 +228,15 @@ def api_config_save():
         "bms_baud":     ("jkbms","baud"),
         "bms_cells":    ("jkbms","cell_count"),
     }
+    changed = []
     for key, (section, opt) in mapping.items():
         if key in body:
             if not cfg.has_section(section): cfg.add_section(section)
             cfg.set(section, opt, str(body[key]))
+            changed.append(key if key != "mqtt_pass" else "mqtt_pass(•••)")
     save_cfg()
+    if changed:
+        notify_change("Bridge config updated: " + ", ".join(changed))
     return jsonify({"ok": True})
 
 CONTROL_QUEUE = BASE.parent / "control_queue.json"
@@ -236,6 +258,7 @@ def api_control():
             except Exception: q = []
         q.append({"key": key, "value": str(val), "ts": time.time()})
         CONTROL_QUEUE.write_text(json.dumps(q[-50:]))
+        notify_change(f"Inverter control: *{key}* → `{val}`")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
@@ -275,6 +298,8 @@ def wifi_connect():
             r = subprocess.run(["nmcli","dev","wifi","connect",ssid],
                                capture_output=True, text=True, timeout=30)
         ok = r.returncode == 0
+        if ok:
+            notify_change(f"WiFi connected to *{ssid}*")
         return jsonify({"ok": ok, "msg": (r.stdout or r.stderr).strip()})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
@@ -291,6 +316,103 @@ def wifi_status():
         return jsonify({"connected": False})
     except:
         return jsonify({"connected": False})
+
+# ── Static IP configuration ──────────────────────────────────────────────────
+def _active_connection():
+    """Return (connection_name, device, type) of the primary active connection."""
+    r = subprocess.run(["nmcli","-t","-f","NAME,DEVICE,TYPE","connection","show","--active"],
+                       capture_output=True, text=True, timeout=10)
+    eth = wifi = None
+    for line in r.stdout.splitlines():
+        p = line.split(":")
+        if len(p) >= 3:
+            if p[2] == "802-3-ethernet" and not eth:  eth  = (p[0], p[1], "ethernet")
+            if p[2] in ("wifi", "802-11-wireless") and not wifi: wifi = (p[0], p[1], "wifi")
+    return eth or wifi or (None, None, None)
+
+@app.route("/api/network/ipinfo")
+@login_required
+def api_ipinfo():
+    """Current IP configuration of the primary connection (for the Network page)."""
+    info = {"ip": "", "gateway": "", "dns": "", "method": "", "connection": "", "device": "", "type": ""}
+    try:
+        conn, dev, ctype = _active_connection()
+        if not conn:
+            return jsonify({**info, "error": "No active connection found"})
+        info.update({"connection": conn, "device": dev, "type": ctype})
+        r = subprocess.run(["nmcli","-t","-f","ipv4.method,IP4.ADDRESS,IP4.GATEWAY,IP4.DNS",
+                            "connection","show",conn],
+                           capture_output=True, text=True, timeout=10)
+        dns = []
+        for line in r.stdout.splitlines():
+            k, _, val = line.partition(":")
+            if k == "ipv4.method":            info["method"]  = val.strip()
+            elif k.startswith("IP4.ADDRESS") and not info["ip"]: info["ip"] = val.strip()
+            elif k == "IP4.GATEWAY":          info["gateway"] = val.strip()
+            elif k.startswith("IP4.DNS"):     dns.append(val.strip())
+        info["dns"] = ", ".join(dns)
+    except Exception as e:
+        info["error"] = str(e)
+    return jsonify(info)
+
+@app.route("/api/network/static_ip", methods=["POST"])
+@login_required
+def api_static_ip():
+    """Set a static IP (mode=static) or revert to DHCP (mode=dhcp) via nmcli.
+    The change is applied by re-activating the connection, so the dashboard
+    will be reachable on the NEW address a few seconds after this returns."""
+    body = request.json or {}
+    mode = body.get("mode", "static")
+    try:
+        conn, dev, _ = _active_connection()
+        if not conn:
+            return jsonify({"ok": False, "msg": "No active connection found"}), 500
+
+        if mode == "dhcp":
+            cmds = [["sudo","nmcli","connection","modify",conn,
+                     "ipv4.method","auto","ipv4.addresses","","ipv4.gateway","","ipv4.dns",""]]
+            change_msg = f"Network *{conn}* reverted to DHCP (automatic IP)"
+        else:
+            ip      = body.get("ip", "").strip()
+            prefix  = str(body.get("prefix", "24")).strip() or "24"
+            gateway = body.get("gateway", "").strip()
+            dns     = body.get("dns", "").strip() or "8.8.8.8,1.1.1.1"
+            if not ip or not gateway:
+                return jsonify({"ok": False, "msg": "IP address and gateway are required"}), 400
+            cmds = [["sudo","nmcli","connection","modify",conn,
+                     "ipv4.method","manual",
+                     "ipv4.addresses",f"{ip}/{prefix}",
+                     "ipv4.gateway",gateway,
+                     "ipv4.dns",dns.replace(" ", "")]]
+            change_msg = f"Static IP set: *{ip}/{prefix}* gw {gateway} on {conn}"
+
+        for cmd in cmds:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+            if r.returncode != 0:
+                msg = (r.stderr or r.stdout).strip()
+                if "password" in msg.lower() or "polkit" in msg.lower() or "not authorized" in msg.lower():
+                    msg = ("Permission denied — add nmcli to passwordless sudo: "
+                           "run install_all.sh again or add "
+                           "'/usr/bin/nmcli' to /etc/sudoers.d/solar-bridge")
+                return jsonify({"ok": False, "msg": msg}), 500
+
+        notify_change(change_msg)
+        # Re-activate in the background AFTER responding, so the browser gets the
+        # success message before the IP actually changes underneath it.
+        def _reactivate():
+            time.sleep(1.5)
+            subprocess.run(["sudo","nmcli","connection","up",conn],
+                           capture_output=True, text=True, timeout=30)
+        threading.Thread(target=_reactivate, daemon=True).start()
+
+        new_ip = body.get("ip", "") if mode == "static" else None
+        return jsonify({"ok": True,
+                        "msg": ("Applying — Pi will move to the new address in a few seconds. "
+                                + (f"Reconnect at http://{new_ip}:8080" if new_ip
+                                   else "Reconnect using the router-assigned address.")),
+                        "new_ip": new_ip})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
 
 @app.route("/api/bluetooth/scan")
 def bt_scan():
@@ -314,6 +436,7 @@ def service_action(action):
     # whole-system reboot
     if action == "reboot":
         try:
+            notify_change("🔄 Pi reboot requested from dashboard")
             subprocess.Popen(["sudo", "reboot"])
             return jsonify({"ok": True, "msg": "Rebooting..."})
         except Exception as e:
@@ -424,6 +547,7 @@ def api_automation_save():
     if not isinstance(rules, list):
         return jsonify({"ok": False, "error": "expected a list of rules"}), 400
     automation_mod.save_rules(rules)
+    notify_change(f"Automation rules updated ({len(rules)} rule{'s' if len(rules)!=1 else ''})")
     # Ask the bridge to reload by bouncing the service (rules are read at start)
     try:
         subprocess.run(["sudo", "systemctl", "restart", "solar-bridge"], timeout=15)
@@ -469,6 +593,7 @@ def api_notify_save():
     if body.get("email_password"):
         cfg.set("email", "password", str(body["email_password"]))
     save_cfg()
+    notify_change("Notification / alert settings updated")
     try:
         subprocess.run(["sudo", "systemctl", "restart", "solar-bridge"], timeout=15)
     except Exception:
@@ -513,6 +638,7 @@ def api_cost_save():
         if k in body:
             cfg.set("cost", k, str(body[k]))
     save_cfg()
+    notify_change("Cost / tariff settings updated")
     return jsonify({"ok": True})
 
 @app.route("/api/energy_stats")
@@ -612,6 +738,7 @@ def api_restore():
                     restored.append(base)
         if not restored:
             return jsonify({"ok": False, "error": "No recognised files in backup"}), 400
+        notify_change("Settings restored from backup: " + ", ".join(restored))
         try:
             subprocess.run(["sudo", "systemctl", "restart", "solar-bridge"], timeout=15)
         except Exception:

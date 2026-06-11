@@ -230,7 +230,8 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 .cell-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;overflow:hidden;
   transition:height .6s cubic-bezier(.4,0,.2,1),background .4s;
   background:linear-gradient(180deg,#34d399,#10b981)}
-.cell-fill.warn{background:linear-gradient(180deg,#fbbf24,#f59e0b)}
+.cell-fill.warn{background:linear-gradient(180deg,#fde047,#facc15)}
+.cell-fill.orange{background:linear-gradient(180deg,#fdba74,#fb923c)}
 .cell-fill.crit{background:linear-gradient(180deg,#fb7185,#f43f5e)}
 .cell-fill.full{background:linear-gradient(180deg,#38bdf8,#10b981)}
 /* charging: upward flowing shine */
@@ -1015,6 +1016,46 @@ aside#sidebar{display:flex;flex-direction:column}
       <button class="btn btn-secondary" onclick="loadConfig()"><i class="fa fa-rotate"></i> Reload</button>
     </div>
   </div>
+
+  <!-- Static IP -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-title"><i class="fa fa-ethernet"></i> Static IP Address</div>
+    <p style="font-size:.82rem;color:var(--text2);line-height:1.6;margin-bottom:12px">
+      Set a fixed IP so the dashboard address never changes after a reboot or router restart.
+      Pick an IP <b>outside your router's DHCP pool</b> (e.g. 192.168.1.200–250) to avoid conflicts.
+    </p>
+    <div style="margin-bottom:14px">
+      <div class="info-row"><span class="lbl">Connection</span><span class="val" id="ip-conn">--</span></div>
+      <div class="info-row"><span class="lbl">Current IP</span><span class="val" id="ip-cur">--</span></div>
+      <div class="info-row"><span class="lbl">Gateway</span><span class="val" id="ip-gw">--</span></div>
+      <div class="info-row"><span class="lbl">DNS</span><span class="val" id="ip-dns">--</span></div>
+      <div class="info-row"><span class="lbl">Mode</span><span class="val" id="ip-mode">--</span></div>
+    </div>
+    <div class="form-grid">
+      <div class="form-group">
+        <label>Static IP Address</label>
+        <input id="sip-ip" placeholder="192.168.1.200">
+      </div>
+      <div class="form-group">
+        <label>Subnet Prefix</label>
+        <input id="sip-prefix" placeholder="24" value="24" type="number" min="8" max="30">
+      </div>
+      <div class="form-group">
+        <label>Gateway (router IP)</label>
+        <input id="sip-gw" placeholder="192.168.1.1">
+      </div>
+      <div class="form-group">
+        <label>DNS Servers</label>
+        <input id="sip-dns" placeholder="8.8.8.8,1.1.1.1">
+      </div>
+    </div>
+    <div style="margin-top:14px;display:flex;gap:10px;flex-wrap:wrap">
+      <button class="btn btn-primary" onclick="applyStaticIp()"><i class="fa fa-thumbtack"></i> Apply Static IP</button>
+      <button class="btn btn-secondary" onclick="revertDhcp()"><i class="fa fa-rotate-left"></i> Use DHCP (automatic)</button>
+      <button class="btn btn-secondary" onclick="loadIpInfo()"><i class="fa fa-rotate"></i> Refresh</button>
+    </div>
+    <div id="sip-msg" style="margin-top:10px;font-size:.83rem"></div>
+  </div>
 </div>
 
 <!-- BLUETOOTH PAGE -->
@@ -1480,7 +1521,7 @@ function showPage(id) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   event && event.currentTarget && event.currentTarget.classList.add('active');
-  if (id === 'network') loadConfig();
+  if (id === 'network') { loadConfig(); loadIpInfo(); }
   if (id === 'system')  loadSysInfo();
   if (id === 'logs')    fetchLogs();
   if (id === 'overview') loadForecast();
@@ -1611,13 +1652,22 @@ function updateAll() {
   // ── Battery page ─────────────────────────────────────────────────────────
   const soc_val = parseInt(D['bank_battery_soc'] || D['bms1_battery_soc'] || 0);
   const gauge = document.getElementById('soc-gauge');
+  const gc = socColor(soc_val);
   if (gauge) {
     gauge.style.setProperty('--soc-pct', soc_val+'%');
-    const gc = soc_val <= 15 ? 'var(--load)' : soc_val <= 40 ? 'var(--solar)' : 'var(--battery)';
     gauge.style.setProperty('--gauge-color', gc);
   }
   v('g-soc', soc_val+'%');
+  setColor('g-soc', gc);
   v('g-rem', f(D['bank_total_remaining_capacity'],1)+'Ah remaining');
+
+  // SOC colour everywhere it appears (header, sidebar badge, footer, per-BMS)
+  setColor('h-soc', gc);  setColor('f-soc', gc);
+  const nb = document.getElementById('nb-soc');
+  if (nb) { nb.style.background = gc; nb.style.color = soc_val <= 50 ? '#fff' : '#000'; }
+  setColor('b1-soc', socColor(parseInt(D['bms1_battery_soc'] || 0)));
+  setColor('b2-soc', socColor(parseInt(D['bms2_battery_soc'] || 0)));
+  setColor('s-bksoc', gc);
 
   updatePowerFlow();
 
@@ -1702,6 +1752,19 @@ function updatePowerFlow() {
   node('pf-inv',     pv > 15 || load > 15 || grid > 15 || charging || discharging);
 }
 
+// SOC % → colour (red → orange → yellow → light green → green)
+function socColor(p) {
+  if (p <= 15) return '#f43f5e';   // critical red
+  if (p <= 30) return '#fb923c';   // orange
+  if (p <= 50) return '#facc15';   // yellow
+  if (p <= 75) return '#a3e635';   // light green
+  return '#10b981';                // healthy green
+}
+function setColor(id, color) {
+  const el = document.getElementById(id);
+  if (el) el.style.color = color;
+}
+
 // Map a LiFePO4 cell voltage to an approximate state-of-charge %
 function cellPct(mv) {
   // piecewise: 3.0V≈10%, 3.2≈30%, 3.30≈70%, 3.40≈95%, 3.45+≈100%
@@ -1716,7 +1779,12 @@ function cellPct(mv) {
   return 100;
 }
 function cellColorClass(p) {
-  return p < 15 ? 'crit' : p < 40 ? 'warn' : p > 96 ? 'full' : '';
+  // 5 tiers: critical red <15, orange <35, yellow <55, green, full (blue-green) >96
+  return p < 15 ? 'crit' : p < 35 ? 'orange' : p < 55 ? 'warn' : p > 96 ? 'full' : '';
+}
+function cellLabelColor(p) {
+  return p < 15 ? '#f43f5e' : p < 35 ? '#fb923c' : p < 55 ? '#facc15'
+       : p > 96 ? '#38bdf8' : 'var(--text2)';
 }
 function updateCells(containerId, prefix, bmsNum) {
   const el = document.getElementById(containerId);
@@ -1752,6 +1820,7 @@ function updateCells(containerId, prefix, bmsNum) {
         + (mode==='discharging' ? ' discharging' : '')
         + (low ? ' low' : '');
       lbl.textContent = (mv * 1000).toFixed(0) + 'mV';
+      lbl.style.color = cellLabelColor(p);
     }
   }
 }
@@ -1838,6 +1907,70 @@ async function loadConfig() {
   document.getElementById('d-bms').value   = c.bms_port   || '/dev/ttyUSB0';
   document.getElementById('d-inv-int').value = c.inv_interval || '10';
   document.getElementById('d-cells').value = c.bms_cells  || '16';
+}
+
+// ── Static IP ──────────────────────────────────────────────────────────────
+async function loadIpInfo() {
+  try {
+    const r = await fetch('/api/network/ipinfo');
+    const j = await r.json();
+    v('ip-conn', (j.connection || '--') + (j.device ? ` (${j.device})` : ''));
+    v('ip-cur',  j.ip || '--');
+    v('ip-gw',   j.gateway || '--');
+    v('ip-dns',  j.dns || '--');
+    const modeEl = document.getElementById('ip-mode');
+    if (modeEl) {
+      const isStatic = j.method === 'manual';
+      modeEl.textContent = isStatic ? 'Static (fixed)' : 'DHCP (automatic)';
+      modeEl.style.color = isStatic ? 'var(--battery)' : 'var(--solar)';
+    }
+    // pre-fill the form from current values
+    const curIp = (j.ip || '').split('/')[0];
+    const curPre = (j.ip || '').split('/')[1] || '24';
+    if (curIp && !document.getElementById('sip-ip').value)  document.getElementById('sip-ip').value = curIp;
+    if (!document.getElementById('sip-gw').value && j.gateway) document.getElementById('sip-gw').value = j.gateway;
+    document.getElementById('sip-prefix').value = curPre;
+    if (!document.getElementById('sip-dns').value && j.dns) document.getElementById('sip-dns').value = j.dns.replace(/\s/g,'');
+  } catch(e) { /* ignore */ }
+}
+
+async function applyStaticIp() {
+  const ip  = document.getElementById('sip-ip').value.trim();
+  const gw  = document.getElementById('sip-gw').value.trim();
+  const pre = document.getElementById('sip-prefix').value.trim() || '24';
+  const dns = document.getElementById('sip-dns').value.trim();
+  const msg = document.getElementById('sip-msg');
+  if (!ip || !gw) { msg.textContent = 'IP address and gateway are required'; msg.style.color = 'var(--load)'; return; }
+  if (!confirm(`Set static IP to ${ip}?\n\nThe dashboard will move to http://${ip}:8080 — you must reconnect there.`)) return;
+  msg.textContent = 'Applying...'; msg.style.color = 'var(--solar)';
+  try {
+    const r = await fetch('/api/network/static_ip', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mode:'static', ip, prefix:pre, gateway:gw, dns})});
+    const j = await r.json();
+    msg.textContent = j.msg;
+    msg.style.color = j.ok ? 'var(--battery)' : 'var(--load)';
+    if (j.ok && j.new_ip) {
+      // offer a click-through to the new address after a few seconds
+      setTimeout(() => {
+        msg.innerHTML = `✓ Applied. <a href="http://${j.new_ip}:8080" style="color:var(--solar)">Open dashboard at http://${j.new_ip}:8080</a>`;
+      }, 6000);
+    }
+  } catch(e) { msg.textContent = 'Error: ' + e; msg.style.color = 'var(--load)'; }
+}
+
+async function revertDhcp() {
+  if (!confirm('Revert to DHCP?\n\nThe router will assign the IP — it may change after reboots.')) return;
+  const msg = document.getElementById('sip-msg');
+  msg.textContent = 'Reverting to DHCP...'; msg.style.color = 'var(--solar)';
+  try {
+    const r = await fetch('/api/network/static_ip', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({mode:'dhcp'})});
+    const j = await r.json();
+    msg.textContent = j.msg;
+    msg.style.color = j.ok ? 'var(--battery)' : 'var(--load)';
+  } catch(e) { msg.textContent = 'Error: ' + e; msg.style.color = 'var(--load)'; }
 }
 
 async function saveMqtt() {
