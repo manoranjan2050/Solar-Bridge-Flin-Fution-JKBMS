@@ -227,6 +227,10 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 .cell-bar{display:flex;flex-direction:column;align-items:center;gap:3px}
 .cell-bar-inner{width:24px;height:60px;background:var(--bg3);border-radius:4px;
   position:relative;overflow:hidden;border:1px solid var(--border)}
+/* ── Battery status pulse ── */
+.bs-pulse{animation:bsPulse 1.5s ease-in-out infinite;display:inline-block}
+@keyframes bsPulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.45;transform:scale(.92)}}
+
 /* ── Mini analog gauges (overview cards) ── */
 .gauge-mini{width:130px;height:74px;margin:0 auto 2px}
 .gauge-mini svg{width:100%;height:100%;overflow:visible}
@@ -580,7 +584,19 @@ aside#sidebar{display:flex;flex-direction:column}
   </div>
 
   <!-- Device mode + temps -->
-  <div class="grid g3">
+  <div class="grid g4">
+    <div class="card">
+      <div class="card-title"><i class="fa fa-battery-half"></i> Battery Status</div>
+      <div style="text-align:center;padding:8px 0 12px">
+        <div id="bs-state" style="font-size:1.3rem;font-weight:700;color:var(--text3)">
+          <i class="fa fa-pause"></i> --</div>
+        <div id="bs-eta" style="font-size:.78rem;color:var(--text3);margin-top:5px">&nbsp;</div>
+      </div>
+      <div class="info-row"><span class="lbl">Current</span><span class="val" id="bs-amps">-- A</span></div>
+      <div class="info-row"><span class="lbl">Power</span><span class="val" id="bs-watts">-- W</span></div>
+      <div class="info-row"><span class="lbl">Charged today</span><span class="val" id="bs-in">-- kWh</span></div>
+      <div class="info-row"><span class="lbl">Used today</span><span class="val" id="bs-out">-- kWh</span></div>
+    </div>
     <div class="card">
       <div class="card-title"><i class="fa fa-info-circle"></i> Inverter Status</div>
       <div class="info-row"><span class="lbl">Device Mode</span><span class="val" id="s-mode">--</span></div>
@@ -1683,6 +1699,45 @@ function updateAll() {
   setColor('ov-load',       loadColor(loadW));
   setColor('ov-batt-v',     socColor(socG));
   setColor('ov-grid-power', gridColor(gridW));
+
+  // Battery Status card — charging / discharging / resting + time estimate
+  (function () {
+    const a = parseFloat(D['inverter_battery_current']) || 0;
+    const vlt = parseFloat(D['inverter_battery_voltage']) || parseFloat(D['bank_battery_voltage']) || 0;
+    const w = Math.round(a * vlt);
+    const remAh = parseFloat(D['bank_total_remaining_capacity']) || 0;
+    const desAh = parseFloat(D['bank_total_design_capacity']) || 0;
+    const fmtH = h => h >= 1 ? h.toFixed(1) + ' h' : Math.max(1, Math.round(h * 60)) + ' min';
+    let state, color, icon, eta = ' ', pulse = true;
+    if (a > 0.5) {
+      state = 'Charging'; color = '#10b981'; icon = 'fa-bolt';
+      if (desAh > 0 && remAh >= 0 && desAh > remAh) {
+        const h = (desAh - remAh) / a;
+        if (h > 0 && h < 99) eta = '≈ ' + fmtH(h) + ' to full';
+      }
+    } else if (a < -0.5) {
+      state = 'Discharging'; color = '#fb923c'; icon = 'fa-arrow-trend-down';
+      if (remAh > 0) {
+        const h = remAh / (-a);
+        if (h > 0 && h < 999) eta = '≈ ' + fmtH(h) + ' of backup left';
+      }
+    } else {
+      state = 'Resting'; color = '#64748b'; icon = 'fa-pause'; pulse = false;
+    }
+    const st = document.getElementById('bs-state');
+    if (st) {
+      st.innerHTML = `<i class="fa ${icon}${pulse ? ' bs-pulse' : ''}"></i> ${state}`;
+      st.style.color = color;
+    }
+    v('bs-eta', eta);
+    v('bs-amps', (a > 0 ? '+' : '') + a.toFixed(1) + ' A');
+    setColor('bs-amps', color);
+    v('bs-watts', Math.abs(w) + ' W');
+    const bin  = D['inverter_battery_energy_in_today']  ?? D['energy_batt_in_kwh'];
+    const bout = D['inverter_battery_energy_out_today'] ?? D['energy_batt_out_kwh'];
+    v('bs-in',  f(bin, 2) ? f(bin, 2) + ' kWh' : '--');
+    v('bs-out', f(bout, 2) ? f(bout, 2) + ' kWh' : '--');
+  })();
 
   // Power-flow nodes (cross layout)
   v('pf-solar-w', pv_w ? pv_w+'W' : '0W');

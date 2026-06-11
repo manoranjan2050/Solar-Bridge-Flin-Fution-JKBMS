@@ -144,8 +144,9 @@ Check devices exist: `ls -la /dev/hidraw* /dev/ttyUSB*`. Permissions: `sudo user
 
 ## 10. 🌐 `http://solar.local` doesn't resolve
 - Reboot the Pi (hostname change needs it); ensure `avahi-daemon` is running.
-- Use the IP (`http://192.168.1.32:8080`) meanwhile.
+- Use the IP (`http://<PI_IP>:8080`) meanwhile — find it with `hostname -I`.
 - For a public domain, run `bash setup_domain.sh` (needs DNS A-record + ports 80/443 for HTTPS).
+- **Tip:** set a **static IP** (dashboard → Network → Static IP Address) so the IP never changes — see #13.
 
 ---
 
@@ -162,10 +163,71 @@ Check devices exist: `ls -la /dev/hidraw* /dev/ttyUSB*`. Permissions: `sudo user
 
 ---
 
+## 13. 📌 Pi IP keeps changing after router/Pi reboot
+**Symptom:** `http://192.168.1.x:8080` stops working; the Pi got a new DHCP address.
+**Fix:** set a **static IP** from the dashboard: **Network → Static IP Address** →
+pick an IP **outside the router's DHCP pool** (e.g. `192.168.1.200`), enter gateway (router IP)
+and DNS → **Apply Static IP**. The dashboard moves to the new address in seconds.
+
+**"Permission denied" when applying:** the sudoers rule is missing `nmcli` (older installs).
+Re-run `bash install_all.sh`, or append `, /usr/bin/nmcli, /bin/nmcli` to the rule in
+`/etc/sudoers.d/solar-bridge`.
+
+**Does it survive reboots?** Yes — this Pi's NetworkManager persists nmcli changes via
+`/etc/netplan/90-NM-*.yaml`. Verify after a reboot with `nmcli -f ipv4.method connection show <conn>`
+(`manual` = static).
+
+---
+
+## 14. 🌍 Tailscale (remote access) problems
+**Status lives on the dashboard:** Network page → "Tailscale" panel (status, IP, remote URL, on/off).
+
+| Symptom | Fix |
+|---|---|
+| "Needs authorisation" / login URL shown | Open the link, sign in (Google/MS/GitHub). The Pi joins your tailnet permanently. |
+| Remote URL doesn't open on phone | Tailscale app must be **installed, toggled ON, and signed into the *same* account** as the Pi. |
+| `https://...ts.net` fails but `http://` works | HTTPS needs the tailnet feature enabled once: the `tailscale serve --https=443` command prints an enable link (`login.tailscale.com/f/serve?...`). HTTP inside the tailnet is already encrypted (WireGuard), so this is optional. |
+| Clean URL (no `:8080`) not working | Re-run: `sudo tailscale serve --bg --http=80 http://localhost:8080` and check `sudo tailscale serve status`. |
+| Install fails: `Temporary failure resolving 'pkgs.tailscale.com'` | Transient DNS — just retry `sudo apt-get install -y tailscale`. |
+| Status shows "offline" / coordination-server warning | `sudo systemctl restart tailscaled`, wait ~10 s, re-check. Local LAN access is unaffected. |
+| Turn On/Off buttons fail | They call `tailscale up/down` as the operator user. If the operator wasn't set: `sudo tailscale up --operator=<your-user>` once. |
+
+---
+
+## 15. 💾 Backups not appearing / cloud copy missing
+- **Where:** `/opt/solar-bridge/backups/` (also listed on the System page).
+- **Timer running?** `systemctl status solar-backup.timer` → should be `active (waiting)`,
+  `Trigger:` shows the next 02:30 run. If missing, re-run `bash install_all.sh`.
+- **Run one now (with full output):**
+  `/opt/solar-bridge/venv/bin/python /opt/solar-bridge/backup_manager.py`
+- **No Telegram file:** Telegram must be enabled with token + chat id (Notifications page);
+  `[backup] to_telegram = true`. Note the cloud copy is the **settings-only zip** (small) —
+  the full history zip stays on the Pi (Telegram bots cap files at ~50 MB).
+- **Rotation:** only the newest 14 of each kind are kept (`[backup] keep`).
+- ⚠️ Backup zips contain `config.ini` (passwords) — handle downloaded copies accordingly.
+
+---
+
+## 16. 🐶 Hardware watchdog — is it active?
+The installer sets `RuntimeWatchdogSec=15` (`/etc/systemd/system.conf.d/10-watchdog.conf`),
+so the Pi auto-reboots if it ever hard-freezes.
+```bash
+journalctl -b | grep -i "watchdog"   # expect: "Watchdog running with a hardware timeout..."
+ls /dev/watchdog*                    # /dev/watchdog0 must exist (bcm2835_wdt)
+```
+If missing, create the conf file with those two lines under `[Manager]` and run
+`sudo systemctl daemon-reexec`.
+
+---
+
 ## Useful one-liners
 ```bash
 # Restart everything
 sudo systemctl restart solar-bridge solar-dashboard
+# Run a backup right now (local + Telegram)
+/opt/solar-bridge/venv/bin/python /opt/solar-bridge/backup_manager.py
+# Tailscale: status / remote URL / serve mapping
+tailscale status; tailscale ip -4; sudo tailscale serve status
 # What is the bridge doing right now?
 sudo journalctl -u solar-bridge -f
 # Is MQTT connected? (look for "MQTT connected ... as 'manoranjan2050'")

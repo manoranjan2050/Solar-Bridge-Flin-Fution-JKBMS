@@ -20,8 +20,10 @@ Home Assistant, and Telegram — all running locally on a Raspberry Pi.
 
 ## ✨ Features
 
-- 📊 **Web dashboard** — animated **cross power-flow** (solar/grid/inverter/load/battery), animated battery cells & SOC gauge, animated solar hero
+- 📊 **Web dashboard** — animated **cross power-flow** (solar/grid/inverter/load/battery), **analog needle gauges** for Solar/Load/Battery/Grid that change colour with the live value, animated battery cells & SOC gauge, battery **charging/discharging/resting** status with time-to-full / backup-time estimate
 - 📱 **Installable PWA** — add to your phone's home screen, runs full-screen like a native app
+- 🌍 **Remote access (Tailscale)** — see your solar **from anywhere** via a free private VPN; status, on/off switch and a beginner guide built into the Network page
+- 📌 **Static IP from the dashboard** — pin the Pi's LAN address so it never changes after a router reboot
 - 📈 **History & Details** — per-day/month/year energy, totals, self-sufficiency, "today vs typical" solar forecast
 - 💰 **Cost & savings tracking** — set your ₹/kWh tariff → daily/monthly grid cost, solar savings, export earnings, net benefit
 - 📤 **CSV export** — download day/month/year energy + cost data for spreadsheets
@@ -30,8 +32,10 @@ Home Assistant, and Telegram — all running locally on a Raspberry Pi.
 - 🔔 **Smart alerts** — low/critical SOC, high temps, overload, over-voltage, cell imbalance, grid loss, faults, battery-full → Telegram / e-mail / Home Assistant
 - 🤖 **Automation rules** — "if SOC < 30% → charge from grid", time-based schedules
 - 🔐 **Optional login** — password-protect the dashboard (change credentials from the System page)
+- 📲 **Settings-change audit** — every change (controls, config, WiFi, reboot, …) sends a Telegram message with the requester's IP
 - 🌐 **Custom domain** — `http://solar.local` (mDNS) out of the box, or `https://solar.yourdomain.com` via the bundled nginx setup
-- 💾 **Backup & restore** — one-click settings backup; restore on a new Pi
+- 💾 **Auto + cloud backups** — nightly backup at 02:30 with 14-copy rotation, **settings copy sent to your Telegram** (off-site!), manual Backup-Now buttons, full restore on a new Pi
+- 🐶 **Hardware watchdog** — the Pi reboots itself automatically if it ever hard-freezes
 - ⚙️ **Works even if MQTT is down** — dashboard data **and** inverter control use a local file bridge, so a broker outage never blanks your dashboard
 - 🛡️ **Appliance-ready** — auto-purges old history, caps log size, auto-starts & self-restarts on boot
 
@@ -146,7 +150,7 @@ Works with most Voltronic / Axpert / MPP Solar / EASUN clones (PI30) and any JK 
 
 | Page | Shows |
 |---|---|
-| **Overview** | Animated power-flow, stat cards, energy totals, **solar generation forecast** (today vs typical) |
+| **Overview** | Animated power-flow, **analog needle gauges** (Solar/Load/Battery/Grid, colour-coded by value), **Battery Status card** (charging/discharging/resting + "time to full" / "backup left" estimate), energy totals, **solar generation forecast** (today vs typical) |
 | **Solar PV** | Animated sun hero, production bar, today/peak/total, today's curve, PV/MPPT + AC + Grid detail |
 | **Battery** | Animated SOC gauge + **32 animated cell bars** (charging/discharging/low, colour by cell %), per-BMS detail |
 | **Inverter** | All live readings + current settings |
@@ -156,7 +160,8 @@ Works with most Voltronic / Axpert / MPP Solar / EASUN clones (PI30) and any JK 
 | **Inverter Settings** | Change priorities, voltages, currents (applied straight to the inverter) |
 | **Automation** | Build threshold/time rules |
 | **Notifications** | Telegram, e-mail & alert-threshold config |
-| **Network & MQTT / Bluetooth / System / Logs** | WiFi, MQTT, BLE scan, Pi stats, backup/restore, live logs |
+| **Network & MQTT** | Network overview (LAN/WAN/Tailscale IPs), **Tailscale on/off + beginner guide**, WiFi scan & connect, MQTT config, device ports, **static IP setup** |
+| **Bluetooth / System / Logs** | BLE scan, Pi stats, services, **backup list + Backup Now + cloud copy**, restore, change login, reboot, live logs |
 
 ### 🔐 Login
 Set a password during install (or **Notifications**/`config.ini → [dashboard] password`). Blank = no login. When set, the dashboard and all control APIs require sign-in.
@@ -178,6 +183,32 @@ This installs **nginx** as a reverse proxy (with WebSocket support) and optional
 **Before running it**, point the domain at your Pi:
 - **LAN only** → DNS A record (or router/hosts) `solar.yourdomain.com` → Pi's LAN IP
 - **Internet + HTTPS** → public DNS A record → your public IP, and forward ports **80 + 443** on your router to the Pi (required for Let's Encrypt)
+
+---
+
+## 🌍 Remote Access from Anywhere (Tailscale)
+
+The safest way to reach your dashboard from outside your home — **no port forwarding, no public exposure**. Tailscale creates a free, private, encrypted network between your own devices.
+
+**Setup (once):**
+1. The installer offers to install Tailscale (or: `curl -fsSL https://tailscale.com/install.sh | sh` then `sudo tailscale up --operator=$USER`)
+2. Open the login link it prints and sign in (Google / Microsoft / GitHub)
+3. Install the Tailscale app on your phone/laptop and sign in with the **same account**
+4. Open the **Remote URL** shown on the dashboard's **Network** page — e.g. `http://<hostname>.<tailnet>.ts.net/`
+
+The Network page shows live Tailscale status with **Turn On / Turn Off** buttons and a built-in beginner guide. To serve the dashboard on the clean URL (no `:8080`): `sudo tailscale serve --bg --http=80 http://localhost:8080`
+
+> Only devices signed into *your* Tailscale account can connect. Traffic is end-to-end encrypted (WireGuard). Keep the dashboard login enabled anyway.
+
+---
+
+## 📌 Static IP (never lose the dashboard address again)
+
+DHCP can hand the Pi a different IP after a router reboot. Fix it from the dashboard:
+
+**Network page → Static IP Address** → shows the current IP/gateway/DNS and mode → enter an IP **outside your router's DHCP pool** (e.g. `192.168.1.200`), gateway and DNS → **Apply Static IP**. The Pi moves to the new address within seconds (the page links you there). **Use DHCP** reverts it.
+
+Applied via `nmcli` and persists across reboots. Needs the passwordless-sudo rule the installer sets up (`/etc/sudoers.d/solar-bridge` incl. `nmcli`).
 
 ---
 
@@ -241,9 +272,28 @@ low/critical **SOC**, high **battery/inverter temperature**, **overload**, **bat
 
 ---
 
-## 💾 Backup & Restore
+## 💾 Backups (automatic, manual & cloud)
 
-**System** page → Download Backup (config + automation + energy; optional history DB) / Restore from a `.zip` (restarts the bridge). Great before re-flashing or moving to a new Pi.
+Three layers of protection, all visible on the **System** page:
+
+| Layer | What happens |
+|---|---|
+| **Automatic (nightly)** | `solar-backup.timer` runs at **02:30**: full backup (settings + history DB) saved to `/opt/solar-bridge/backups/`, oldest deleted after **14** copies |
+| **Cloud (Telegram)** | Each nightly run also sends a small **settings-only zip to your Telegram chat** — a free off-site copy that survives a dead SD card |
+| **Manual** | **Backup Now** / **Backup + Cloud** buttons, list of all backups with download/delete, plus the classic download-to-browser buttons |
+
+**Restore:** System page → *Restore from Backup* → pick any backup `.zip` (downloaded, from Telegram, or from the list) → bridge restarts with your settings. Great before re-flashing or moving to a new Pi.
+
+Tune in `config.ini → [backup]`: `keep` (rotation count), `include_history`, `to_telegram`, `to_email`.
+
+> ⚠️ Backup zips contain `config.ini` (passwords) — treat downloaded backups like a password file.
+
+---
+
+## 🐶 Hardware Watchdog
+
+The installer enables the Raspberry Pi's hardware watchdog via systemd (`RuntimeWatchdogSec=15`). If the Pi ever hard-freezes, the hardware reboots it automatically — and since both services auto-start, monitoring resumes by itself. Verify with:
+`journalctl -b | grep -i watchdog` → "Watchdog running with a hardware timeout…".
 
 ---
 
@@ -302,6 +352,12 @@ username =
 password =               ; use an app password
 from_addr =
 to_addr =
+
+[backup]
+include_history = true   ; nightly local backup includes the history DB
+keep = 14                ; rotation — how many copies to keep
+to_telegram = true       ; send settings zip to Telegram every night
+to_email = false         ; e-mail the backup as an attachment
 ```
 
 Most settings are editable from the dashboard.
@@ -319,14 +375,17 @@ Raspberry Pi
     ├── solar_db.py         # SQLite history (readings, daily_energy, alerts)
     ├── notifier.py         # Telegram (alerts + command bot) / e-mail / HA alerts
     ├── automation.py       # threshold + time rule engine
+    ├── backup_manager.py   # nightly/manual backups + rotation + Telegram/e-mail cloud copy
     ├── config.ini          # settings        live_state.json   # live data for dashboard
     ├── energy.json         # kWh totals      control_queue.json# dashboard→bridge commands
     ├── solar_bridge.db     # history         automation.json   # rules
+    ├── backups/            # rotated nightly + manual backup zips
     ├── dashboard/app.py + templates/         # Flask + Socket.IO web UI
     └── venv/
 
-systemd:  solar-bridge.service  ·  solar-dashboard.service   (both auto-start on boot)
-optional: nginx (reverse proxy)  via setup_domain.sh
+systemd:  solar-bridge.service · solar-dashboard.service · solar-backup.timer (02:30 nightly)
+          + hardware watchdog (RuntimeWatchdogSec=15 — auto-reboot on freeze)
+optional: nginx (reverse proxy) via setup_domain.sh · Tailscale (remote access)
 ```
 
 **Why it's resilient:** the dashboard reads `live_state.json` and sends control via `control_queue.json`, both written/read locally — so it keeps working even if the MQTT broker is unreachable. MQTT is only required for Home Assistant.
@@ -366,6 +425,10 @@ Quick reference:
 | **Custom domain not loading** | DNS A record must point to the Pi; for HTTPS, ports 80/443 must reach it. See `setup_domain.sh` notes. |
 | **Telegram silent** | Enable on Notifications, recheck token + chat id, ensure Pi has internet. |
 | **USB permission errors** | `sudo usermod -aG dialout,plugdev <user>` then reboot. |
+| **Pi IP changed after reboot** | Set a **static IP**: Network page → Static IP Address. |
+| **Static IP "Permission denied"** | sudoers rule missing `nmcli` — re-run `bash install_all.sh`. |
+| **Tailscale URL not working** | Phone must have the Tailscale app ON, signed into the *same* account. Check Network page status. |
+| **No nightly backups appearing** | `systemctl status solar-backup.timer` — re-run installer if missing. |
 
 Handy commands:
 
