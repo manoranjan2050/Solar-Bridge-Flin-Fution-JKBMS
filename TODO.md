@@ -12,14 +12,15 @@ on the Pi (192.168.1.32). See `PROJECT_CONTEXT.txt` for the full current state.
 Goal: a downloadable `.img` users flash with Raspberry Pi Imager, boot, and configure from
 their phone — exactly like Solar Assistant OS. **Chosen approach: pi-gen / CustomPiOS.**
 
-### Step 1 — pi-gen build setup (the core image builder)
-- [ ] Add a **pi-gen custom stage** (`stage-solar`) OR use **CustomPiOS** wrapper
-  - CustomPiOS is the easier path (designed exactly for "bundle my app into an image", used by OctoPi)
-  - Repo layout: a `os/` folder with the build module that copies the repo into the image and runs `install_all.sh` at build time (non-interactive mode needed — see below)
-- [ ] Make `install_all.sh` support a **non-interactive / defaults mode** (env vars instead of prompts) so it can run inside the image build. Add e.g. `SOLAR_NONINTERACTIVE=1` that uses sensible defaults and skips `read`.
-- [ ] Base image: Raspberry Pi OS Lite 64-bit (Bookworm)
-- [ ] Bake in: python venv + all deps, services enabled, udev rules, avahi, sudoers
-- [ ] Output: `solar-bridge-os-<version>.img.xz`
+### Step 1 — pi-gen build setup (the core image builder)  ✅ DONE 2026-06-11
+- [x] **pi-gen custom stage** added: `pigen/stage-solar/` + `pigen/config` + `pigen/build-os.sh`
+      (driver script clones pi-gen arm64 branch, stages clean source, runs build-docker.sh)
+- [x] `install_all.sh` **non-interactive mode**: `SOLAR_NONINTERACTIVE=1` + `SOLAR_*` env vars,
+      runs as root in chroot, skips runtime-only cmds (udevadm/systemctl start/Tailscale login)
+- [x] Base image: Raspberry Pi OS Lite 64-bit (Bookworm), hostname `solarbridge`, user `solar`
+- [x] Baked in: venv + deps, services enabled, udev, avahi, sudoers, backup timer, watchdog
+- [x] Output: `<date>-SolarBridgeOS.img.xz` · full tutorial in **BUILDING_OS.md**
+- [ ] **First real build on Ubuntu** (user) + flash test on a spare SD card
 
 ### Step 2 — First-boot WiFi setup wizard (plug-and-play, no SSH)
 - [ ] On first boot with no WiFi, start a **hotspot + captive portal** so the user picks WiFi

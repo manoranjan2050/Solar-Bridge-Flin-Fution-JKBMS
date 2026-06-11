@@ -1,0 +1,25 @@
+# Solar Bridge OS — pi-gen configuration
+# Copied into the pi-gen directory by build-os.sh
+
+IMG_NAME="SolarBridgeOS"
+RELEASE="bookworm"
+DEPLOY_COMPRESSION="xz"
+COMPRESSION_LEVEL=6
+
+# Hostname → dashboard at http://solarbridge.local:8080
+TARGET_HOSTNAME="solarbridge"
+
+# Default user (can be overridden in Raspberry Pi Imager's customization)
+FIRST_USER_NAME="solar"
+FIRST_USER_PASS="solarbridge"
+DISABLE_FIRST_BOOT_USER_RENAME=1
+
+ENABLE_SSH=1
+
+LOCALE_DEFAULT="en_US.UTF-8"
+KEYBOARD_KEYMAP="us"
+KEYBOARD_LAYOUT="English (US)"
+TIMEZONE_DEFAULT="Asia/Kolkata"
+
+# Build the Lite stages, then our custom stage (no desktop)
+STAGE_LIST="stage0 stage1 stage2 stage-solar"

@@ -16,8 +16,14 @@ warn() { echo -e "${Y}⚠ $*${N}"; }
 err()  { echo -e "${R}✗ $*${N}"; exit 1; }
 hr()   { echo -e "${B}$(printf '─%.0s' {1..60})${N}"; }
 
+# ── Non-interactive mode (pi-gen image builds): SOLAR_NONINTERACTIVE=1 ────────
+#   Skips all prompts (env-var overrides below), allows running as root inside
+#   a chroot, and skips runtime-only commands (udevadm, systemctl start, …).
+NONINT="${SOLAR_NONINTERACTIVE:-0}"
+RUNTIME=0; [[ -d /run/systemd/system ]] && RUNTIME=1   # 0 inside a pi-gen chroot
+
 # ── Banner ────────────────────────────────────────────────────────────────────
-clear
+[[ "$NONINT" != "1" ]] && clear
 echo -e "${Y}"
 cat << 'BANNER'
   ____  ___  _      _   ____    ____  ____  ___ ____   ____ _____
@@ -32,8 +38,12 @@ echo -e "${N}"
 hr
 
 # ── Checks ─────────────────────────────────────────────────────────────────────
-[[ $EUID -eq 0 ]] && err "Do NOT run as root. Run as your normal user (e.g. pi or manoranjan)."
-USER_NAME=$(whoami)
+if [[ $EUID -eq 0 && "$NONINT" != "1" ]]; then
+    err "Do NOT run as root. Run as your normal user (e.g. pi or manoranjan)."
+fi
+USER_NAME="${SOLAR_USER:-$(whoami)}"
+[[ "$NONINT" == "1" && "$USER_NAME" == "root" ]] && \
+    err "Non-interactive mode needs SOLAR_USER=<target user> (e.g. SOLAR_USER=solar)"
 INSTALL_DIR=/opt/solar-bridge
 DASH_DIR=$INSTALL_DIR/dashboard
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -45,6 +55,20 @@ for f in solar_bridge.py solar_db.py notifier.py automation.py \
 done
 
 # ── Configuration wizard ──────────────────────────────────────────────────────
+if [[ "$NONINT" == "1" ]]; then
+    info "Non-interactive mode — using env vars / image defaults"
+    MQTT_HOST=${SOLAR_MQTT_HOST:-homeassistant.local}
+    MQTT_PORT=${SOLAR_MQTT_PORT:-1883}
+    MQTT_USER=${SOLAR_MQTT_USER:-}
+    MQTT_PASS=${SOLAR_MQTT_PASS:-}
+    INV_PORT=${SOLAR_INV_PORT:-/dev/hidraw0}
+    BMS_PORT=${SOLAR_BMS_PORT:-/dev/ttyUSB0}
+    BMS_COUNT=${SOLAR_BMS_COUNT:-2}
+    BMS_CELLS=${SOLAR_BMS_CELLS:-16}
+    DASH_PORT=${SOLAR_DASH_PORT:-8080}
+    DASH_HOST=${SOLAR_DASH_HOST:-solarbridge}
+    DASH_PASS=${SOLAR_DASH_PASS:-solar}      # default image login: admin / solar
+else
 hr
 info "Configuration — press Enter to accept defaults"
 hr
@@ -94,6 +118,7 @@ hr
 read -p "  Continue? [Y/n]: " CONFIRM
 [[ "${CONFIRM,,}" == "n" ]] && echo "Aborted." && exit 0
 echo ""
+fi
 
 # ── Step 1: System packages ───────────────────────────────────────────────────
 info "Step 1/7 — Installing system packages..."
@@ -125,8 +150,10 @@ KERNEL=="ttyUSB*",  MODE="0666", GROUP="dialout"
 KERNEL=="ttyACM*",  MODE="0666", GROUP="dialout"
 UDEV
 
-sudo udevadm control --reload-rules
-sudo udevadm trigger
+if [[ "$RUNTIME" == "1" ]]; then
+    sudo udevadm control --reload-rules
+    sudo udevadm trigger
+fi
 ok "USB device access configured"
 
 # ── Step 3: Install directories ───────────────────────────────────────────────
@@ -264,7 +291,10 @@ fi
 
 # ── Step 6: Custom domain (mDNS / avahi) ──────────────────────────────────────
 info "Step 6/7 — Configuring custom domain http://$DASH_HOST.local ..."
-if [[ "$(hostname)" != "$DASH_HOST" ]]; then
+if [[ "$NONINT" == "1" ]]; then
+    # pi-gen sets the hostname via TARGET_HOSTNAME — don't fight it in the chroot
+    ok "Hostname left to the image build (TARGET_HOSTNAME)"
+elif [[ "$(hostname)" != "$DASH_HOST" ]]; then
     sudo hostnamectl set-hostname "$DASH_HOST" 2>/dev/null || \
         echo "$DASH_HOST" | sudo tee /etc/hostname > /dev/null
     # Keep /etc/hosts in sync so sudo doesn't complain
@@ -272,7 +302,7 @@ if [[ "$(hostname)" != "$DASH_HOST" ]]; then
         echo -e "127.0.1.1\t$DASH_HOST" | sudo tee -a /etc/hosts > /dev/null
 fi
 sudo systemctl enable avahi-daemon 2>/dev/null || true
-sudo systemctl restart avahi-daemon 2>/dev/null || true
+[[ "$RUNTIME" == "1" ]] && sudo systemctl restart avahi-daemon 2>/dev/null || true
 ok "Reachable at http://$DASH_HOST.local:$DASH_PORT after reboot"
 
 # ── Step 7: Systemd services ──────────────────────────────────────────────────
@@ -348,21 +378,33 @@ sudo systemctl daemon-reexec 2>/dev/null || true
 ok "Hardware watchdog enabled (15s)"
 
 sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
-sudo systemctl daemon-reload
+sudo systemctl daemon-reload 2>/dev/null || true
 sudo systemctl enable solar-bridge solar-dashboard
-sudo systemctl start solar-backup.timer 2>/dev/null || true
-sudo systemctl restart solar-bridge
-sleep 3
-sudo systemctl restart solar-dashboard
-ok "Services installed, enabled and started"
+if [[ "$RUNTIME" == "1" ]]; then
+    sudo systemctl start solar-backup.timer 2>/dev/null || true
+    sudo systemctl restart solar-bridge
+    sleep 3
+    sudo systemctl restart solar-dashboard
+    ok "Services installed, enabled and started"
+else
+    ok "Services installed + enabled (they start automatically on first boot)"
+fi
 
 # ── Optional: Tailscale for secure remote access ──────────────────────────────
-read -p "  Install Tailscale for secure remote access? [y/N]: " TS_YN
-if [[ "${TS_YN,,}" == "y" ]]; then
+if [[ "$NONINT" == "1" ]]; then
+    TS_YN="${SOLAR_INSTALL_TAILSCALE:-n}"
+else
+    read -p "  Install Tailscale for secure remote access? [y/N]: " TS_YN
+fi
+if [[ "${TS_YN,,}" == "y" || "$TS_YN" == "1" ]]; then
     info "Installing Tailscale..."
     curl -fsSL https://tailscale.com/install.sh | sh
-    sudo tailscale up --operator="$USER_NAME" || true
-    ok "Tailscale installed — if a login URL was shown above, open it to authorise"
+    if [[ "$RUNTIME" == "1" ]]; then
+        sudo tailscale up --operator="$USER_NAME" || true
+        ok "Tailscale installed — if a login URL was shown above, open it to authorise"
+    else
+        ok "Tailscale baked into image — run 'sudo tailscale up' after first boot"
+    fi
 fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
@@ -392,8 +434,10 @@ echo -e "  ${Y}⚠  Log out / reboot for USB group + hostname changes to take ef
 echo ""
 hr
 
-# Detect USB devices
-echo -e "\n${C}USB devices connected right now:${N}"
-lsusb
-echo ""
-ls -la /dev/hidraw* /dev/ttyUSB* 2>/dev/null && echo "" || echo -e "${Y}(No USB devices found — plug in inverter & BMS then check: ls /dev/hidraw* /dev/ttyUSB*)${N}\n"
+# Detect USB devices (skipped during image builds — no hardware in a chroot)
+if [[ "$RUNTIME" == "1" ]]; then
+    echo -e "\n${C}USB devices connected right now:${N}"
+    lsusb 2>/dev/null || true
+    echo ""
+    ls -la /dev/hidraw* /dev/ttyUSB* 2>/dev/null && echo "" || echo -e "${Y}(No USB devices found — plug in inverter & BMS then check: ls /dev/hidraw* /dev/ttyUSB*)${N}\n"
+fi

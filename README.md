@@ -132,6 +132,16 @@ When it finishes:
 
 > Re-running the installer **keeps your existing `config.ini`** (won't wipe MQTT creds). Delete `/opt/solar-bridge/config.ini` first for a clean reset.
 
+### 💿 Or build a flashable "Solar Bridge OS" image
+
+Prefer a ready-to-flash SD-card image (like Solar Assistant OS)? Build one on any Ubuntu PC:
+
+```bash
+bash pigen/build-os.sh     # → ../pi-gen/deploy/<date>-SolarBridgeOS.img.xz
+```
+
+Flash with Raspberry Pi Imager (set WiFi in its ⚙️ settings), boot, open `http://solarbridge.local:8080` — everything pre-installed. **Full guide: [BUILDING_OS.md](BUILDING_OS.md)**
+
 ---
 
 ## 🔌 Hardware
