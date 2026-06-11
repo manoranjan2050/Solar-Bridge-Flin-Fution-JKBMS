@@ -330,11 +330,30 @@ def _active_connection():
             if p[2] in ("wifi", "802-11-wireless") and not wifi: wifi = (p[0], p[1], "wifi")
     return eth or wifi or (None, None, None)
 
+# Public (WAN) IP — cached 10 min so we don't hammer the lookup service
+_pubip_cache = {"ip": "", "ts": 0.0}
+
+def _public_ip():
+    if _pubip_cache["ip"] and time.time() - _pubip_cache["ts"] < 600:
+        return _pubip_cache["ip"]
+    try:
+        import requests as _rq
+        ip = _rq.get("https://api.ipify.org", timeout=6).text.strip()
+        if ip and len(ip) < 64:
+            _pubip_cache.update(ip=ip, ts=time.time())
+            return ip
+    except Exception:
+        pass
+    return _pubip_cache["ip"]
+
 @app.route("/api/network/ipinfo")
 @login_required
 def api_ipinfo():
     """Current IP configuration of the primary connection (for the Network page)."""
-    info = {"ip": "", "gateway": "", "dns": "", "method": "", "connection": "", "device": "", "type": ""}
+    import socket as _socket
+    info = {"ip": "", "gateway": "", "dns": "", "method": "", "connection": "",
+            "device": "", "type": "", "hostname": _socket.gethostname(),
+            "public_ip": _public_ip()}
     try:
         conn, dev, ctype = _active_connection()
         if not conn:
@@ -810,11 +829,12 @@ def api_backups_delete():
         return jsonify({"ok": True})
     return jsonify({"ok": False, "msg": "not found"}), 404
 
-# ── Tailscale (remote access) status ──────────────────────────────────────────
+# ── Tailscale (remote access) status + simple controls ───────────────────────
 @app.route("/api/tailscale")
 @login_required
 def api_tailscale():
-    info = {"installed": False, "running": False, "ip": "", "auth_url": ""}
+    info = {"installed": False, "running": False, "ip": "", "auth_url": "",
+            "dns_name": "", "url": "", "state": ""}
     try:
         r = subprocess.run(["tailscale", "ip", "-4"],
                            capture_output=True, text=True, timeout=5)
@@ -823,17 +843,45 @@ def api_tailscale():
                         ip=r.stdout.strip().splitlines()[0])
         else:
             info["installed"] = True
-            # logged out — see if a login URL is pending
+            # logged out / stopped — see if a login URL is pending
             r2 = subprocess.run(["tailscale", "status"],
                                 capture_output=True, text=True, timeout=5)
             for line in (r2.stdout + r2.stderr).splitlines():
                 if "https://login.tailscale.com" in line:
                     info["auth_url"] = line.strip().split()[-1]
+        # MagicDNS name + backend state from the JSON status
+        r3 = subprocess.run(["tailscale", "status", "--json"],
+                            capture_output=True, text=True, timeout=5)
+        if r3.returncode == 0 and r3.stdout.strip():
+            d = json.loads(r3.stdout)
+            info["state"] = d.get("BackendState", "")
+            dns = (d.get("Self") or {}).get("DNSName", "").rstrip(".")
+            if dns:
+                info["dns_name"] = dns
+                info["url"] = f"http://{dns}/"
+            info["running"] = info["state"] == "Running"
     except FileNotFoundError:
         pass
     except Exception:
         pass
     return jsonify(info)
+
+@app.route("/api/tailscale/toggle", methods=["POST"])
+@login_required
+def api_tailscale_toggle():
+    """Turn Tailscale on/off (the device stays authorised either way)."""
+    action = (request.json or {}).get("action", "")
+    if action not in ("up", "down"):
+        return jsonify({"ok": False, "msg": "unknown action"}), 400
+    try:
+        r = subprocess.run(["tailscale", action],
+                           capture_output=True, text=True, timeout=30)
+        ok = r.returncode == 0
+        if ok:
+            notify_change(f"Tailscale remote access turned *{('ON' if action == 'up' else 'OFF')}*")
+        return jsonify({"ok": ok, "msg": (r.stdout + r.stderr).strip()[:300] or action})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
 
 # ── SocketIO events ──────────────────────────────────────────────────────────
 @socketio.on("connect")

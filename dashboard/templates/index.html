@@ -227,6 +227,15 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 .cell-bar{display:flex;flex-direction:column;align-items:center;gap:3px}
 .cell-bar-inner{width:24px;height:60px;background:var(--bg3);border-radius:4px;
   position:relative;overflow:hidden;border:1px solid var(--border)}
+/* ── Mini analog gauges (overview cards) ── */
+.gauge-mini{width:130px;height:74px;margin:0 auto 2px}
+.gauge-mini svg{width:100%;height:100%;overflow:visible}
+.gauge-mini .gm-fill{transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1),stroke .6s ease;
+  filter:drop-shadow(0 0 4px currentColor)}
+.gauge-mini .gm-needle{transition:transform 1s cubic-bezier(.34,1.3,.5,1),stroke .6s ease;
+  transform-origin:50px 52px}
+.gauge-mini .gm-ticks line{stroke:var(--border);stroke-width:1.5}
+
 .cell-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;overflow:hidden;
   transition:height .6s cubic-bezier(.4,0,.2,1),background .4s;
   background:linear-gradient(180deg,#34d399,#10b981)}
@@ -472,28 +481,28 @@ aside#sidebar{display:flex;flex-direction:column}
 
   <!-- Stat cards -->
   <div class="grid g4" style="margin-bottom:20px">
-    <div class="stat-card solar">
-      <div class="stat-icon"><i class="fa fa-solar-panel"></i></div>
+    <div class="stat-card solar" style="align-items:center;text-align:center">
+      <div class="gauge-mini" id="gg-pv"></div>
       <div class="stat-val" id="ov-pv-power">-- W</div>
-      <div class="stat-label">Solar Power</div>
+      <div class="stat-label"><i class="fa fa-solar-panel"></i> Solar Power</div>
       <div class="stat-sub" id="ov-pv-vc">-- V &nbsp;/&nbsp; -- A</div>
     </div>
-    <div class="stat-card load">
-      <div class="stat-icon"><i class="fa fa-plug"></i></div>
+    <div class="stat-card load" style="align-items:center;text-align:center">
+      <div class="gauge-mini" id="gg-load"></div>
       <div class="stat-val" id="ov-load">-- W</div>
-      <div class="stat-label">Load</div>
+      <div class="stat-label"><i class="fa fa-plug"></i> Load</div>
       <div class="stat-sub" id="ov-load-pct">--% &nbsp;/&nbsp; -- VA</div>
     </div>
-    <div class="stat-card battery">
-      <div class="stat-icon"><i class="fa fa-battery-three-quarters"></i></div>
+    <div class="stat-card battery" style="align-items:center;text-align:center">
+      <div class="gauge-mini" id="gg-batt"></div>
       <div class="stat-val" id="ov-batt-v">-- V</div>
-      <div class="stat-label">Battery</div>
+      <div class="stat-label"><i class="fa fa-battery-three-quarters"></i> Battery</div>
       <div class="stat-sub" id="ov-batt-cur">--A &nbsp;SOC: --%</div>
     </div>
-    <div class="stat-card grid">
-      <div class="stat-icon"><i class="fa fa-tower-cell"></i></div>
+    <div class="stat-card grid" style="align-items:center;text-align:center">
+      <div class="gauge-mini" id="gg-grid"></div>
       <div class="stat-val" id="ov-grid-power">-- W</div>
-      <div class="stat-label">Grid</div>
+      <div class="stat-label"><i class="fa fa-tower-cell"></i> Grid</div>
       <div class="stat-sub" id="ov-grid-v">-- V &nbsp;/&nbsp; -- Hz</div>
     </div>
   </div>
@@ -935,6 +944,72 @@ aside#sidebar{display:flex;flex-direction:column}
 <!-- NETWORK PAGE -->
 <div class="page" id="page-network">
   <div class="page-title"><i class="fa fa-wifi"></i> Network & MQTT</div>
+
+  <!-- Network Overview & Remote Access -->
+  <div class="card" style="margin-bottom:16px">
+    <div class="card-title"><i class="fa fa-globe"></i> Network Overview &amp; Remote Access</div>
+    <div class="grid g2" style="gap:20px">
+      <div>
+        <div style="font-size:.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">
+          <i class="fa fa-house"></i> Home network (LAN)</div>
+        <div class="info-row"><span class="lbl">Pi LAN IP</span><span class="val" id="na-lan">--</span></div>
+        <div class="info-row"><span class="lbl">Hostname</span><span class="val" id="na-host">--</span></div>
+        <div class="info-row"><span class="lbl">Router / Gateway</span><span class="val" id="na-gw">--</span></div>
+        <div class="info-row"><span class="lbl">IP mode</span><span class="val" id="na-mode">--</span></div>
+        <div class="info-row"><span class="lbl">Internet (WAN) IP</span><span class="val" id="na-wan">--</span></div>
+      </div>
+      <div>
+        <div style="font-size:.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">
+          <i class="fa fa-shield-halved"></i> Tailscale (access from anywhere)</div>
+        <div class="info-row"><span class="lbl">Status</span>
+          <span class="val"><span class="dot" id="na-ts-dot"></span> <span id="na-ts-state">checking...</span></span></div>
+        <div class="info-row"><span class="lbl">Tailscale IP</span><span class="val" id="na-ts-ip">--</span></div>
+        <div class="info-row"><span class="lbl">Remote URL</span><span class="val" id="na-ts-url">--</span></div>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="btn btn-success btn-sm" id="ts-btn-up" onclick="tsToggle('up')">
+            <i class="fa fa-power-off"></i> Turn On</button>
+          <button class="btn btn-danger btn-sm" id="ts-btn-down" onclick="tsToggle('down')">
+            <i class="fa fa-power-off"></i> Turn Off</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadNetOverview()">
+            <i class="fa fa-rotate"></i> Refresh</button>
+        </div>
+        <div id="ts-msg" style="margin-top:8px;font-size:.8rem"></div>
+      </div>
+    </div>
+
+    <!-- Beginner guide -->
+    <details style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+      <summary style="cursor:pointer;font-size:.88rem;color:var(--solar);font-weight:600">
+        <i class="fa fa-circle-question"></i> What is Tailscale? How do I see my solar from anywhere? (click to open guide)
+      </summary>
+      <div style="font-size:.85rem;color:var(--text2);line-height:1.7;margin-top:12px">
+        <p style="margin-bottom:10px">
+          <b style="color:var(--text1)">Tailscale</b> creates a <b>free, private, encrypted network</b> between
+          your own devices — like a secret tunnel between your phone and this Pi. Nothing is opened to the
+          public internet, there is no port-forwarding, and <b>only devices signed into YOUR account</b> can connect.
+        </p>
+        <p style="margin-bottom:6px;color:var(--text1)"><b>Setup on your phone / laptop (one time):</b></p>
+        <ol style="margin-left:20px;margin-bottom:10px">
+          <li>Install the Tailscale app —
+            <a href="https://play.google.com/store/apps/details?id=com.tailscale.ipn" target="_blank" style="color:var(--solar)">Android</a> ·
+            <a href="https://apps.apple.com/app/tailscale/id1470499037" target="_blank" style="color:var(--solar)">iPhone</a> ·
+            <a href="https://tailscale.com/download" target="_blank" style="color:var(--solar)">Windows/Mac</a></li>
+          <li>Sign in with the <b>same account</b> you used to authorise this Pi (Google / Microsoft / GitHub)</li>
+          <li>Switch the Tailscale toggle ON in the app</li>
+          <li>Open the <b>Remote URL shown above</b> in your browser — your dashboard, from anywhere 🌍</li>
+        </ol>
+        <p style="margin-bottom:6px;color:var(--text1)"><b>Good to know:</b></p>
+        <ul style="margin-left:20px">
+          <li>Works on mobile data, office WiFi, anywhere — no router setup needed</li>
+          <li>The "LAN IP" works only at home; the "Remote URL" works everywhere</li>
+          <li>Manage your devices at <a href="https://login.tailscale.com/admin/machines" target="_blank" style="color:var(--solar)">login.tailscale.com</a></li>
+          <li>Your dashboard password still protects the settings — keep it on</li>
+          <li>"Turn Off" only pauses remote access; "Turn On" resumes it instantly</li>
+        </ul>
+      </div>
+    </details>
+  </div>
+
   <div class="grid g2" style="margin-bottom:16px">
 
     <!-- WiFi -->
@@ -1535,7 +1610,7 @@ function showPage(id) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   event && event.currentTarget && event.currentTarget.classList.add('active');
-  if (id === 'network') { loadConfig(); loadIpInfo(); }
+  if (id === 'network') { loadConfig(); loadIpInfo(); loadNetOverview(); }
   if (id === 'system')  loadSysInfo();
   if (id === 'logs')    fetchLogs();
   if (id === 'overview') loadForecast();
@@ -1594,6 +1669,20 @@ function updateAll() {
   v('ov-batt-cur', f(D['inverter_battery_current'],1)+'A  SOC: '+(soc||'--')+'%');
   v('ov-grid-power', grid_w !== null ? grid_w+'W' : '--W');
   v('ov-grid-v',   f(D['inverter_grid_voltage'],1)+'V / '+f(D['inverter_grid_frequency'],1)+'Hz');
+
+  // Analog gauges — needle + arc colour track the live value
+  const pvW   = parseFloat(D['inverter_pv_power']) || 0;
+  const loadW = parseFloat(D['inverter_ac_out_active_power']) || 0;
+  const gridW = parseFloat(D['inverter_grid_power']) || 0;
+  const socG  = parseInt(D['bank_battery_soc'] || D['bms1_battery_soc'] || 0);
+  setGauge('gg-pv',   pvW   / GAUGE_MAX.pv,   pvColor(pvW));
+  setGauge('gg-load', loadW / GAUGE_MAX.load, loadColor(loadW));
+  setGauge('gg-batt', socG  / 100,            socColor(socG));
+  setGauge('gg-grid', gridW / GAUGE_MAX.grid, gridColor(gridW));
+  setColor('ov-pv-power',   pvColor(pvW));
+  setColor('ov-load',       loadColor(loadW));
+  setColor('ov-batt-v',     socColor(socG));
+  setColor('ov-grid-power', gridColor(gridW));
 
   // Power-flow nodes (cross layout)
   v('pf-solar-w', pv_w ? pv_w+'W' : '0W');
@@ -1766,6 +1855,53 @@ function updatePowerFlow() {
   node('pf-inv',     pv > 15 || load > 15 || grid > 15 || charging || discharging);
 }
 
+// ── Mini analog gauges ───────────────────────────────────────────────────────
+const GAUGE_ARC = Math.PI * 40;   // semicircle arc length, r=40
+
+function initGauge(id) {
+  const el = document.getElementById(id);
+  if (!el || el.dataset.init) return el;
+  el.dataset.init = '1';
+  // tick marks every 22.5° around the dial
+  let ticks = '';
+  for (let a = 0; a <= 180; a += 22.5) {
+    const rad = (180 - a) * Math.PI / 180;
+    const x1 = 50 + 47 * Math.cos(rad), y1 = 52 - 47 * Math.sin(rad);
+    const x2 = 50 + 51 * Math.cos(rad), y2 = 52 - 51 * Math.sin(rad);
+    ticks += `<line x1="${x1.toFixed(1)}" y1="${y1.toFixed(1)}" x2="${x2.toFixed(1)}" y2="${y2.toFixed(1)}"/>`;
+  }
+  el.innerHTML = `
+    <svg viewBox="0 0 100 62">
+      <g class="gm-ticks">${ticks}</g>
+      <path d="M 10 52 A 40 40 0 0 1 90 52" fill="none" stroke="var(--bg3)"
+            stroke-width="9" stroke-linecap="round"/>
+      <path class="gm-fill" d="M 10 52 A 40 40 0 0 1 90 52" fill="none" stroke="#64748b"
+            stroke-width="9" stroke-linecap="round"
+            stroke-dasharray="${GAUGE_ARC}" stroke-dashoffset="${GAUGE_ARC}"/>
+      <line class="gm-needle" x1="50" y1="52" x2="50" y2="19" stroke="#94a3b8"
+            stroke-width="2.5" stroke-linecap="round" style="transform:rotate(-90deg)"/>
+      <circle cx="50" cy="52" r="4.5" fill="var(--bg2)" stroke="var(--text3)" stroke-width="1.5"/>
+    </svg>`;
+  return el;
+}
+
+function setGauge(id, frac, color) {
+  const el = initGauge(id);
+  if (!el) return;
+  frac = Math.max(0, Math.min(1, frac || 0));
+  const fill   = el.querySelector('.gm-fill');
+  const needle = el.querySelector('.gm-needle');
+  if (fill)   { fill.style.strokeDashoffset = GAUGE_ARC * (1 - frac); fill.style.stroke = color; fill.style.color = color; }
+  if (needle) { needle.style.transform = `rotate(${-90 + 180 * frac}deg)`; needle.style.stroke = color; }
+}
+
+// Gauge colour scales
+const GAUGE_MAX = { pv: 4000, load: 5000, grid: 5000 };   // watts full-scale
+function pvColor(w)   { return w < 100 ? '#64748b' : w < 800 ? '#facc15' : w < 2000 ? '#f59e0b' : '#10b981'; }
+function loadColor(w) { const p = w / GAUGE_MAX.load * 100;
+                        return p < 40 ? '#10b981' : p < 60 ? '#facc15' : p < 80 ? '#fb923c' : '#f43f5e'; }
+function gridColor(w) { return w < 50 ? '#10b981' : w < 1000 ? '#facc15' : w < 2500 ? '#fb923c' : '#f43f5e'; }
+
 // SOC % → colour (red → orange → yellow → light green → green)
 function socColor(p) {
   if (p <= 15) return '#f43f5e';   // critical red
@@ -1921,6 +2057,69 @@ async function loadConfig() {
   document.getElementById('d-bms').value   = c.bms_port   || '/dev/ttyUSB0';
   document.getElementById('d-inv-int').value = c.inv_interval || '10';
   document.getElementById('d-cells').value = c.bms_cells  || '16';
+}
+
+// ── Network overview + Tailscale controls ───────────────────────────────────
+async function loadNetOverview() {
+  // LAN side
+  try {
+    const r = await fetch('/api/network/ipinfo');
+    const j = await r.json();
+    v('na-lan',  (j.ip || '--').split('/')[0]);
+    v('na-host', j.hostname ? j.hostname + '.local' : '--');
+    v('na-gw',   j.gateway || '--');
+    v('na-wan',  j.public_ip || '--');
+    const m = document.getElementById('na-mode');
+    if (m) {
+      const isStatic = j.method === 'manual';
+      m.textContent = isStatic ? 'Static (fixed)' : 'DHCP (can change!)';
+      m.style.color = isStatic ? 'var(--battery)' : 'var(--solar)';
+    }
+  } catch(e) {}
+  // Tailscale side
+  try {
+    const r = await fetch('/api/tailscale');
+    const j = await r.json();
+    const dot = document.getElementById('na-ts-dot');
+    const st  = document.getElementById('na-ts-state');
+    const urlEl = document.getElementById('na-ts-url');
+    if (j.running && j.ip) {
+      if (dot) dot.className = 'dot green';
+      if (st)  { st.textContent = 'Connected'; st.style.color = 'var(--battery)'; }
+      v('na-ts-ip', j.ip);
+      if (urlEl) urlEl.innerHTML = j.url
+        ? `<a href="${j.url}" target="_blank" style="color:var(--solar)">${j.url}</a>`
+        : `http://${j.ip}:8080`;
+    } else if (j.auth_url) {
+      if (dot) dot.className = 'dot yellow';
+      if (st)  { st.textContent = 'Needs authorisation'; st.style.color = 'var(--solar)'; }
+      if (urlEl) urlEl.innerHTML = `<a href="${j.auth_url}" target="_blank" style="color:var(--solar)">Click to authorise →</a>`;
+    } else if (j.installed) {
+      if (dot) dot.className = 'dot red';
+      if (st)  { st.textContent = j.state === 'Stopped' ? 'Turned off' : (j.state || 'Not connected'); st.style.color = 'var(--text3)'; }
+      v('na-ts-ip', '--'); v('na-ts-url', '--');
+    } else {
+      if (dot) dot.className = 'dot red';
+      if (st)  { st.textContent = 'Not installed'; st.style.color = 'var(--text3)'; }
+    }
+  } catch(e) {}
+}
+
+async function tsToggle(action) {
+  const msg = document.getElementById('ts-msg');
+  if (action === 'down' &&
+      !confirm('Turn OFF remote access?\n\nYou will no longer be able to reach the dashboard from outside your home until you turn it back on.')) return;
+  msg.textContent = action === 'up' ? 'Turning on...' : 'Turning off...';
+  msg.style.color = 'var(--solar)';
+  try {
+    const r = await fetch('/api/tailscale/toggle', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action})});
+    const j = await r.json();
+    msg.textContent = j.ok ? (action === 'up' ? '✓ Remote access ON' : '✓ Remote access OFF') : j.msg;
+    msg.style.color = j.ok ? 'var(--battery)' : 'var(--load)';
+    setTimeout(loadNetOverview, 1500);
+  } catch(e) { msg.textContent = 'Error: ' + e; msg.style.color = 'var(--load)'; }
 }
 
 // ── Static IP ──────────────────────────────────────────────────────────────
