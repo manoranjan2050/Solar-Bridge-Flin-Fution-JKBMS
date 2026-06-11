@@ -18,24 +18,34 @@ Every section can be switched on/off, every entity can be remapped, and it follo
 
 ---
 
-## 📥 Install (5 minutes)
+## 📥 Install
 
-### 1. Copy the card file to Home Assistant
+### ✅ Method 1 — HACS custom repository (recommended, 2 minutes)
 
-Put [`solar-bridge-card.js`](solar-bridge-card.js) into your HA `config/www/` folder. Pick whichever way you normally use:
+1. **HACS → ⋮ (top-right menu) → Custom repositories**
+2. Fill in:
+   - **Repository:** `https://github.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS`
+   - **Type:** `Dashboard`
+3. Click **Add**, close the dialog
+4. In HACS, search **"Solar Bridge Card"** → open it → **Download**
+5. Reload when prompted (HACS registers the dashboard resource automatically)
 
-**Option A — Samba / File editor add-on:** create the folder `www` inside `config` if it doesn't exist, copy the file in.
+Updates arrive through HACS like any other card.
 
-**Option B — SSH / terminal on the HA box:**
+> Older HACS versions: if the card doesn't render after download, add the resource manually —
+> Settings → Dashboards → ⋮ → Resources → `+` →
+> URL `/hacsfiles/Solar-Bridge-Flin-Fution-JKBMS/solar-bridge-card.js`, type **JavaScript module**.
+
+### Method 2 — Manual copy (no HACS)
+
+**Step 1.** Put [`dist/solar-bridge-card.js`](../dist/solar-bridge-card.js) into your HA `config/www/` folder (Samba / File editor add-on / SCP), or via SSH on the HA box:
 ```bash
 mkdir -p /config/www
 wget -O /config/www/solar-bridge-card.js \
-  https://raw.githubusercontent.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS/master/ha-card/solar-bridge-card.js
+  https://raw.githubusercontent.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS/master/dist/solar-bridge-card.js
 ```
 
-### 2. Register it as a dashboard resource
-
-**Settings → Dashboards → ⋮ (top-right) → Resources → + Add Resource**
+**Step 2.** Register the resource: **Settings → Dashboards → ⋮ (top-right) → Resources → + Add Resource**
 - URL: `/local/solar-bridge-card.js`
 - Type: **JavaScript module**
 
@@ -43,7 +53,7 @@ wget -O /config/www/solar-bridge-card.js \
 
 Then hard-refresh the browser (Ctrl+Shift+R) / restart the HA companion app.
 
-### 3. Add the card
+### Add the card
 
 Edit a dashboard → **+ Add Card** → search **"Solar Bridge Card"** (or scroll to *Custom: Solar Bridge Card*), or add it via YAML:
 

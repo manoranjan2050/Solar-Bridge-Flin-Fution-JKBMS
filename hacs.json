@@ -1,0 +1,6 @@
+{
+  "name": "Solar Bridge Card",
+  "filename": "solar-bridge-card.js",
+  "render_readme": true,
+  "homeassistant": "2023.4.0"
+}

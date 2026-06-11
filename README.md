@@ -244,8 +244,9 @@ type: custom:solar-bridge-card
 title: Solar Bridge
 ```
 
-**Install + full guide: [ha-card/README.md](ha-card/README.md)** (copy one `.js` file to
-`config/www/`, add it as a dashboard resource, done).
+**Install via HACS:** HACS → ⋮ → Custom repositories → add this repo URL with type **Dashboard**
+→ download "Solar Bridge Card". Full guide (incl. manual install + entity mapping):
+**[ha-card/README.md](ha-card/README.md)**
 
 ---
 
