@@ -232,6 +232,21 @@ Controls exposed: output/charger priority, max charge & grid-charge current, flo
 
 > HA depends on MQTT. If the broker login fails, the dashboard + Telegram still work (they don't need MQTT); the logs will show `MQTT CONNECTION REFUSED (rc=135, Not authorized)` so you know to fix the password.
 
+### 🎛️ Solar Bridge Card (custom Lovelace card)
+
+Want the **whole System Overview inside Home Assistant**? The bundled custom card gives you the
+animated power flow, the 4 analog needle gauges (colour-coded), energy totals, a 24 h solar
+generation chart, the battery Charging/Discharging/Resting status with time estimates, and
+inverter status — in one card, theme-aware, every section toggleable:
+
+```yaml
+type: custom:solar-bridge-card
+title: Solar Bridge
+```
+
+**Install + full guide: [ha-card/README.md](ha-card/README.md)** (copy one `.js` file to
+`config/www/`, add it as a dashboard resource, done).
+
 ---
 
 ## 💬 Telegram Bot
