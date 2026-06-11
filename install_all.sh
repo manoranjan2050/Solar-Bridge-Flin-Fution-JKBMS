@@ -190,15 +190,22 @@ username =
 password =
 from_addr =
 to_addr =
+
+[backup]
+include_history = true
+keep = 14
+to_telegram = true
+to_email = false
 CONF
     ok "config.ini written"
 fi
 
 # Bridge + add-on modules
-cp "$SRC_DIR/solar_bridge.py" "$INSTALL_DIR/"
-cp "$SRC_DIR/solar_db.py"     "$INSTALL_DIR/"
-cp "$SRC_DIR/notifier.py"     "$INSTALL_DIR/"
-cp "$SRC_DIR/automation.py"   "$INSTALL_DIR/"
+cp "$SRC_DIR/solar_bridge.py"   "$INSTALL_DIR/"
+cp "$SRC_DIR/solar_db.py"       "$INSTALL_DIR/"
+cp "$SRC_DIR/notifier.py"       "$INSTALL_DIR/"
+cp "$SRC_DIR/automation.py"     "$INSTALL_DIR/"
+cp "$SRC_DIR/backup_manager.py" "$INSTALL_DIR/" 2>/dev/null || true
 [[ -f "$SRC_DIR/automation.json" ]] && cp "$SRC_DIR/automation.json" "$INSTALL_DIR/"
 ok "Bridge + modules copied"
 
@@ -321,13 +328,42 @@ SUDOEOF
 sudo chmod 0440 /etc/sudoers.d/solar-bridge
 sudo visudo -cf /etc/sudoers.d/solar-bridge >/dev/null 2>&1 || { warn "sudoers syntax check failed — removing"; sudo rm -f /etc/sudoers.d/solar-bridge; }
 
+# Nightly backup timer (local rotation + Telegram cloud copy)
+if [[ -f "$SRC_DIR/solar-backup.service" ]]; then
+    sudo sed "s/User=manoranjan/User=$USER_NAME/" "$SRC_DIR/solar-backup.service" \
+        | sudo tee /etc/systemd/system/solar-backup.service > /dev/null
+    sudo cp "$SRC_DIR/solar-backup.timer" /etc/systemd/system/
+    sudo systemctl enable solar-backup.timer
+    ok "Nightly backup timer installed (02:30 daily)"
+fi
+
+# Hardware watchdog — auto-reboot if the Pi ever hard-freezes
+sudo mkdir -p /etc/systemd/system.conf.d
+sudo tee /etc/systemd/system.conf.d/10-watchdog.conf > /dev/null << 'WDCONF'
+[Manager]
+RuntimeWatchdogSec=15
+RebootWatchdogSec=2min
+WDCONF
+sudo systemctl daemon-reexec 2>/dev/null || true
+ok "Hardware watchdog enabled (15s)"
+
 sudo chown -R "$USER_NAME:$USER_NAME" "$INSTALL_DIR"
 sudo systemctl daemon-reload
 sudo systemctl enable solar-bridge solar-dashboard
+sudo systemctl start solar-backup.timer 2>/dev/null || true
 sudo systemctl restart solar-bridge
 sleep 3
 sudo systemctl restart solar-dashboard
 ok "Services installed, enabled and started"
+
+# ── Optional: Tailscale for secure remote access ──────────────────────────────
+read -p "  Install Tailscale for secure remote access? [y/N]: " TS_YN
+if [[ "${TS_YN,,}" == "y" ]]; then
+    info "Installing Tailscale..."
+    curl -fsSL https://tailscale.com/install.sh | sh
+    sudo tailscale up --operator="$USER_NAME" || true
+    ok "Tailscale installed — if a login URL was shown above, open it to authorise"
+fi
 
 # ── Final summary ─────────────────────────────────────────────────────────────
 PI_IP=$(hostname -I | awk '{print $1}')

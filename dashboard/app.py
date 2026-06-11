@@ -749,6 +749,92 @@ def api_restore():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
+# ── Local backups (auto + manual) ─────────────────────────────────────────────
+BACKUP_DIR = BASE.parent / "backups"
+
+@app.route("/api/backups")
+@login_required
+def api_backups_list():
+    items = []
+    if BACKUP_DIR.exists():
+        for p in sorted(BACKUP_DIR.glob("solar-*.zip"), reverse=True):
+            items.append({"name": p.name, "size": p.stat().st_size,
+                          "ts": int(p.stat().st_mtime)})
+    next_auto = ""
+    try:
+        r = subprocess.run(["systemctl", "show", "solar-backup.timer",
+                            "--property=NextElapseUSecRealtime", "--value"],
+                           capture_output=True, text=True, timeout=5)
+        val = r.stdout.strip()
+        if val and val not in ("n/a", "0"):
+            next_auto = val
+    except Exception:
+        pass
+    return jsonify({"backups": items[:30], "next_auto": next_auto})
+
+@app.route("/api/backups/create", methods=["POST"])
+@login_required
+def api_backups_create():
+    body = request.json or {}
+    cloud = bool(body.get("cloud"))
+    try:
+        import backup_manager
+        p = backup_manager.create_backup(include_history=bool(body.get("history", True)))
+        msg = f"Created {p.name} ({p.stat().st_size // 1024} KB)"
+        if cloud:
+            cz = backup_manager.create_settings_zip()
+            ok, detail = backup_manager.send_telegram(cz)
+            msg += " · Telegram: " + ("sent ✓" if ok else detail)
+        backup_manager.rotate()
+        notify_change(f"Backup created: {p.name}" + (" + cloud copy" if cloud else ""))
+        return jsonify({"ok": True, "msg": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+@app.route("/api/backups/download/<name>")
+@login_required
+def api_backups_download(name):
+    name = os.path.basename(name)
+    p = BACKUP_DIR / name
+    if not (p.exists() and name.startswith("solar-") and name.endswith(".zip")):
+        return jsonify({"error": "not found"}), 404
+    return send_file(p, as_attachment=True)
+
+@app.route("/api/backups/delete", methods=["POST"])
+@login_required
+def api_backups_delete():
+    name = os.path.basename((request.json or {}).get("name", ""))
+    p = BACKUP_DIR / name
+    if p.exists() and name.startswith("solar-") and name.endswith(".zip"):
+        p.unlink()
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "msg": "not found"}), 404
+
+# ── Tailscale (remote access) status ──────────────────────────────────────────
+@app.route("/api/tailscale")
+@login_required
+def api_tailscale():
+    info = {"installed": False, "running": False, "ip": "", "auth_url": ""}
+    try:
+        r = subprocess.run(["tailscale", "ip", "-4"],
+                           capture_output=True, text=True, timeout=5)
+        if r.returncode == 0 and r.stdout.strip():
+            info.update(installed=True, running=True,
+                        ip=r.stdout.strip().splitlines()[0])
+        else:
+            info["installed"] = True
+            # logged out — see if a login URL is pending
+            r2 = subprocess.run(["tailscale", "status"],
+                                capture_output=True, text=True, timeout=5)
+            for line in (r2.stdout + r2.stderr).splitlines():
+                if "https://login.tailscale.com" in line:
+                    info["auth_url"] = line.strip().split()[-1]
+    except FileNotFoundError:
+        pass
+    except Exception:
+        pass
+    return jsonify(info)
+
 # ── SocketIO events ──────────────────────────────────────────────────────────
 @socketio.on("connect")
 def on_connect():

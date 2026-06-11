@@ -1,0 +1,9 @@
+[Unit]
+Description=Solar Bridge nightly backup (local + cloud)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=manoranjan
+WorkingDirectory=/opt/solar-bridge
+ExecStart=/opt/solar-bridge/venv/bin/python /opt/solar-bridge/backup_manager.py
