@@ -240,6 +240,14 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
   transform-origin:50px 52px}
 .gauge-mini .gm-ticks line{stroke:var(--border);stroke-width:1.5}
 
+/* battery-page gauge wrappers */
+.gb-wrap{text-align:center;min-width:130px}
+.gb-val{font-size:1.25rem;font-weight:700;line-height:1.1}
+.gb-lbl{font-size:.7rem;color:var(--text3)}
+.gb-sub{font-size:.68rem;color:var(--text2);min-height:1em;margin-top:2px}
+.gb-wrap.active .gauge-mini{animation:gbGlow 1.6s ease-in-out infinite}
+@keyframes gbGlow{0%,100%{filter:drop-shadow(0 0 0 transparent)}50%{filter:drop-shadow(0 0 7px var(--gb-c,#10b98166))}}
+
 .cell-fill{position:absolute;bottom:0;left:0;right:0;border-radius:3px;overflow:hidden;
   transition:height .6s cubic-bezier(.4,0,.2,1),background .4s;
   background:linear-gradient(180deg,#34d399,#10b981)}
@@ -686,18 +694,24 @@ aside#sidebar{display:flex;flex-direction:column}
   <div class="page-title"><i class="fa fa-battery-three-quarters"></i> Battery</div>
 
   <div class="grid g3" style="margin-bottom:20px">
-    <!-- Gauge -->
-    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px">
-      <div class="card-title"><i class="fa fa-battery-three-quarters"></i> Bank SOC</div>
-      <div class="gauge-wrap">
-        <div class="gauge" id="soc-gauge">
-          <div class="gauge-inner">
-            <div class="soc-val" id="g-soc">--%</div>
-            <div class="soc-lbl">State of Charge</div>
-          </div>
+    <!-- Bank gauges: SOC + Amps (analog needle style) -->
+    <div class="card" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px">
+      <div class="card-title"><i class="fa fa-battery-three-quarters"></i> Bank SOC &amp; Current</div>
+      <div style="display:flex;gap:14px;justify-content:center;flex-wrap:wrap">
+        <div class="gb-wrap">
+          <div class="gauge-mini" id="gg-bank-soc"></div>
+          <div class="gb-val" id="g-soc">--%</div>
+          <div class="gb-lbl">State of Charge</div>
+          <div class="gb-sub" id="g-rem">-- Ah remaining</div>
         </div>
-        <div style="font-size:.8rem;color:var(--text2)" id="g-rem">-- Ah remaining</div>
+        <div class="gb-wrap">
+          <div class="gauge-mini" id="gg-bank-amp"></div>
+          <div class="gb-val" id="g-amp">-- A</div>
+          <div class="gb-lbl">Battery Current</div>
+          <div class="gb-sub" id="g-amp-sub">&nbsp;</div>
+        </div>
       </div>
+      <div style="font-size:.62rem;color:var(--text3)">amps dial: ◀ discharge · centre 0 · charge ▶</div>
     </div>
 
     <!-- BMS 1 -->
@@ -1809,15 +1823,30 @@ function updateAll() {
 
   // ── Battery page ─────────────────────────────────────────────────────────
   const soc_val = parseInt(D['bank_battery_soc'] || D['bms1_battery_soc'] || 0);
-  const gauge = document.getElementById('soc-gauge');
   const gc = socColor(soc_val);
-  if (gauge) {
-    gauge.style.setProperty('--soc-pct', soc_val+'%');
-    gauge.style.setProperty('--gauge-color', gc);
-  }
+
+  // Bank SOC — analog needle gauge (colour follows SOC tiers)
+  setGauge('gg-bank-soc', soc_val / 100, gc);
   v('g-soc', soc_val+'%');
   setColor('g-soc', gc);
   v('g-rem', f(D['bank_total_remaining_capacity'],1)+'Ah remaining');
+
+  // Battery Amps — centre-zero analog gauge: needle left = discharging,
+  // centre = idle, right = charging. Colour follows direction + magnitude.
+  const ampsB = parseFloat(D['inverter_battery_current']) || 0;
+  const aCol  = ampColor(ampsB);
+  setGauge('gg-bank-amp', 0.5 + ampsB / (2 * AMP_GAUGE_MAX), aCol);
+  v('g-amp', (ampsB > 0 ? '+' : '') + ampsB.toFixed(1) + ' A');
+  setColor('g-amp', aCol);
+  const bVolt = parseFloat(D['bank_battery_voltage']) || parseFloat(D['inverter_battery_voltage']) || 0;
+  const aState = ampsB > 0.5 ? '⚡ charging' : ampsB < -0.5 ? '🔻 discharging' : 'idle';
+  v('g-amp-sub', `${Math.abs(Math.round(ampsB * bVolt))} W · ${aState}`);
+  // pulsing glow on the dials while active
+  document.querySelectorAll('.gb-wrap').forEach(w => {
+    const active = Math.abs(ampsB) > 0.5;
+    w.classList.toggle('active', active);
+    w.style.setProperty('--gb-c', aCol + '66');
+  });
 
   // SOC colour everywhere it appears (header, sidebar badge, footer, per-BMS)
   setColor('h-soc', gc);  setColor('f-soc', gc);
@@ -1956,6 +1985,15 @@ function pvColor(w)   { return w < 100 ? '#64748b' : w < 800 ? '#facc15' : w < 2
 function loadColor(w) { const p = w / GAUGE_MAX.load * 100;
                         return p < 40 ? '#10b981' : p < 60 ? '#facc15' : p < 80 ? '#fb923c' : '#f43f5e'; }
 function gridColor(w) { return w < 50 ? '#10b981' : w < 1000 ? '#facc15' : w < 2500 ? '#fb923c' : '#f43f5e'; }
+
+// Battery current → colour. Charging = greens (deeper when stronger),
+// discharging = yellow → orange → red as the draw gets heavier, idle = gray.
+const AMP_GAUGE_MAX = 100;   // ±A full-scale on the battery amps dial
+function ampColor(a) {
+  if (a > 0.5)  return a < 20 ? '#a3e635' : a < 60 ? '#10b981' : '#059669';
+  if (a < -0.5) { const d = -a; return d < 20 ? '#facc15' : d < 45 ? '#fb923c' : '#f43f5e'; }
+  return '#64748b';
+}
 
 // SOC % → colour (red → orange → yellow → light green → green)
 function socColor(p) {
