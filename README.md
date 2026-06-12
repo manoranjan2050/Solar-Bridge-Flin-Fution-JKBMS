@@ -194,6 +194,14 @@ This installs **nginx** as a reverse proxy (with WebSocket support) and optional
 - **LAN only** → DNS A record (or router/hosts) `solar.yourdomain.com` → Pi's LAN IP
 - **Internet + HTTPS** → public DNS A record → your public IP, and forward ports **80 + 443** on your router to the Pi (required for Let's Encrypt)
 
+**Easier public option — Cloudflare Tunnel (recommended):** get
+`https://solar.yourdomain.com` with **automatic HTTPS, no port-forwarding**, and a
+free **login gate** in front (essential since the dashboard controls the inverter):
+```bash
+bash setup_cloudflare.sh solar.yourdomain.com
+```
+Full walkthrough incl. the Cloudflare Access lock-down: **[CLOUDFLARE_TUNNEL.md](CLOUDFLARE_TUNNEL.md)**
+
 ---
 
 ## 🌍 Remote Access from Anywhere (Tailscale)
