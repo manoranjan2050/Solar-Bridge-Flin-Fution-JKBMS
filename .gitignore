@@ -49,3 +49,6 @@ venv/
 Thumbs.db
 .idea/
 .vscode/
+
+# ── Claude Code local config (personal, do not publish) ──────────────────────
+.claude/
