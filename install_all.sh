@@ -233,6 +233,7 @@ cp "$SRC_DIR/solar_db.py"       "$INSTALL_DIR/"
 cp "$SRC_DIR/notifier.py"       "$INSTALL_DIR/"
 cp "$SRC_DIR/automation.py"     "$INSTALL_DIR/"
 cp "$SRC_DIR/backup_manager.py" "$INSTALL_DIR/" 2>/dev/null || true
+cp "$SRC_DIR/cf_manage.sh"      "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/cf_manage.sh" || true
 [[ -f "$SRC_DIR/automation.json" ]] && cp "$SRC_DIR/automation.json" "$INSTALL_DIR/"
 ok "Bridge + modules copied"
 
@@ -353,7 +354,7 @@ DSVCEOF
 # Allow the dashboard user to manage the services + read logs without a password
 # (needed for "Save & Restart" buttons and the Logs / System pages)
 sudo tee /etc/sudoers.d/solar-bridge > /dev/null << SUDOEOF
-$USER_NAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart solar-bridge, /usr/bin/systemctl start solar-bridge, /usr/bin/systemctl stop solar-bridge, /usr/bin/systemctl status solar-bridge, /usr/bin/systemctl restart solar-dashboard, /usr/bin/systemctl start solar-dashboard, /usr/bin/systemctl stop solar-dashboard, /usr/bin/systemctl status solar-dashboard, /bin/systemctl restart solar-bridge, /bin/systemctl start solar-bridge, /bin/systemctl stop solar-bridge, /bin/systemctl status solar-bridge, /bin/systemctl restart solar-dashboard, /bin/systemctl start solar-dashboard, /bin/systemctl stop solar-dashboard, /bin/systemctl status solar-dashboard, /usr/bin/journalctl, /bin/journalctl, /sbin/reboot, /usr/sbin/reboot, /sbin/shutdown, /usr/sbin/shutdown, /usr/bin/nmcli, /bin/nmcli
+$USER_NAME ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart solar-bridge, /usr/bin/systemctl start solar-bridge, /usr/bin/systemctl stop solar-bridge, /usr/bin/systemctl status solar-bridge, /usr/bin/systemctl restart solar-dashboard, /usr/bin/systemctl start solar-dashboard, /usr/bin/systemctl stop solar-dashboard, /usr/bin/systemctl status solar-dashboard, /bin/systemctl restart solar-bridge, /bin/systemctl start solar-bridge, /bin/systemctl stop solar-bridge, /bin/systemctl status solar-bridge, /bin/systemctl restart solar-dashboard, /bin/systemctl start solar-dashboard, /bin/systemctl stop solar-dashboard, /bin/systemctl status solar-dashboard, /usr/bin/journalctl, /bin/journalctl, /sbin/reboot, /usr/sbin/reboot, /sbin/shutdown, /usr/sbin/shutdown, /usr/bin/nmcli, /bin/nmcli, /opt/solar-bridge/cf_manage.sh, /usr/bin/systemctl restart cloudflared, /bin/systemctl restart cloudflared
 SUDOEOF
 sudo chmod 0440 /etc/sudoers.d/solar-bridge
 sudo visudo -cf /etc/sudoers.d/solar-bridge >/dev/null 2>&1 || { warn "sudoers syntax check failed — removing"; sudo rm -f /etc/sudoers.d/solar-bridge; }

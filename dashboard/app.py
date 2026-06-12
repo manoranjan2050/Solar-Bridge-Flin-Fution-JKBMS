@@ -866,6 +866,63 @@ def api_tailscale():
         pass
     return jsonify(info)
 
+# ── Cloudflare Tunnel (public custom domain) ──────────────────────────────────
+CF_HELPER = "/opt/solar-bridge/cf_manage.sh"
+
+def _cf_call(*args):
+    """Run the privileged cloudflare helper; return its one-line result dict."""
+    try:
+        r = subprocess.run(["sudo", CF_HELPER, *args],
+                           capture_output=True, text=True, timeout=40)
+        out = (r.stdout + r.stderr).strip()
+        # parse "k=v k=v ..." (values may contain dots/hyphens, no spaces)
+        res = {}
+        for tok in out.split():
+            if "=" in tok:
+                k, _, v = tok.partition("=")
+                res[k] = v
+        res["_raw"] = out
+        res["_rc"] = r.returncode
+        return res
+    except Exception as e:
+        return {"_raw": str(e), "_rc": 1, "error": str(e)}
+
+@app.route("/api/cloudflare")
+@login_required
+def api_cloudflare():
+    r = _cf_call("status")
+    host = r.get("host", "")
+    return jsonify({
+        "installed":  r.get("installed") == "yes",
+        "running":    r.get("running") == "yes",
+        "configured": r.get("configured") == "yes",
+        "hostname":   host,
+        "url":        f"https://{host}" if host else "",
+        "tunnel":     r.get("tunnel", ""),
+    })
+
+@app.route("/api/cloudflare/restart", methods=["POST"])
+@login_required
+def api_cloudflare_restart():
+    r = _cf_call("restart")
+    ok = r.get("ok") == "restarted"
+    if ok:
+        notify_change("Cloudflare Tunnel restarted")
+    return jsonify({"ok": ok, "msg": r.get("_raw", "")})
+
+@app.route("/api/cloudflare/hostname", methods=["POST"])
+@login_required
+def api_cloudflare_hostname():
+    host = (request.json or {}).get("hostname", "").strip().lower()
+    if not host:
+        return jsonify({"ok": False, "msg": "hostname required"}), 400
+    r = _cf_call("set-hostname", host)
+    if r.get("ok") == "set":
+        notify_change(f"Cloudflare public URL changed to *https://{host}*")
+        return jsonify({"ok": True, "url": f"https://{host}",
+                        "route": r.get("route", ""), "msg": r.get("_raw", "")})
+    return jsonify({"ok": False, "msg": r.get("error", r.get("_raw", "failed"))}), 400
+
 @app.route("/api/tailscale/toggle", methods=["POST"])
 @login_required
 def api_tailscale_toggle():

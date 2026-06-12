@@ -1007,6 +1007,30 @@ aside#sidebar{display:flex;flex-direction:column}
       </div>
     </div>
 
+    <!-- Cloudflare Tunnel (public custom domain) -->
+    <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:14px">
+      <div style="font-size:.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px">
+        <i class="fa fa-globe"></i> Cloudflare Tunnel (public domain)</div>
+      <div class="info-row"><span class="lbl">Status</span>
+        <span class="val"><span class="dot" id="cf-dot"></span> <span id="cf-state">checking...</span></span></div>
+      <div class="info-row"><span class="lbl">Public URL</span><span class="val" id="cf-url">--</span></div>
+      <div id="cf-manage" style="display:none">
+        <div class="form-group" style="margin-top:10px">
+          <label>Public hostname (subdomain.yourdomain.com)</label>
+          <input id="cf-host" placeholder="solar.manoranjan.dev">
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap">
+          <button class="btn btn-primary btn-sm" onclick="cfSetHostname()"><i class="fa fa-pen"></i> Change URL</button>
+          <button class="btn btn-secondary btn-sm" onclick="cfRestart()"><i class="fa fa-rotate"></i> Restart Tunnel</button>
+          <button class="btn btn-secondary btn-sm" onclick="loadCloudflare()"><i class="fa fa-arrows-rotate"></i> Refresh</button>
+        </div>
+        <div style="font-size:.7rem;color:var(--text3);margin-top:6px">
+          Changing the URL only works within a domain already connected to this Pi. The new subdomain must be on the same Cloudflare account.</div>
+      </div>
+      <div id="cf-setup" style="display:none;font-size:.82rem;color:var(--text2);margin-top:8px;line-height:1.6"></div>
+      <div id="cf-msg" style="margin-top:8px;font-size:.8rem"></div>
+    </div>
+
     <!-- Beginner guide -->
     <details style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
       <summary style="cursor:pointer;font-size:.88rem;color:var(--solar);font-weight:600">
@@ -1640,7 +1664,7 @@ function showPage(id) {
   document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   event && event.currentTarget && event.currentTarget.classList.add('active');
-  if (id === 'network') { loadConfig(); loadIpInfo(); loadNetOverview(); }
+  if (id === 'network') { loadConfig(); loadIpInfo(); loadNetOverview(); loadCloudflare(); }
   if (id === 'system')  loadSysInfo();
   if (id === 'logs')    fetchLogs();
   if (id === 'overview') loadForecast();
@@ -2196,6 +2220,87 @@ async function loadNetOverview() {
       if (st)  { st.textContent = 'Not installed'; st.style.color = 'var(--text3)'; }
     }
   } catch(e) {}
+}
+
+// ── Cloudflare Tunnel ───────────────────────────────────────────────────────
+async function loadCloudflare() {
+  const dot = document.getElementById('cf-dot');
+  const st  = document.getElementById('cf-state');
+  const urlEl = document.getElementById('cf-url');
+  const manage = document.getElementById('cf-manage');
+  const setup  = document.getElementById('cf-setup');
+  try {
+    const j = await (await fetch('/api/cloudflare')).json();
+    if (!j.installed) {
+      if (dot) dot.className = 'dot red';
+      if (st)  { st.textContent = 'not installed'; st.style.color = 'var(--text3)'; }
+      if (urlEl) urlEl.textContent = '--';
+      manage.style.display = 'none';
+      setup.style.display = 'block';
+      setup.innerHTML = 'Cloudflare Tunnel gives you a public <b>https://your.domain</b> with no port-forwarding. '
+        + 'Install + first-time setup is a one-time terminal step — see the '
+        + '<b>CLOUDFLARE_TUNNEL.md</b> guide in the project.';
+      return;
+    }
+    if (j.configured && j.running) {
+      if (dot) dot.className = 'dot green';
+      if (st)  { st.textContent = 'Running'; st.style.color = 'var(--battery)'; }
+    } else if (j.configured) {
+      if (dot) dot.className = 'dot yellow';
+      if (st)  { st.textContent = 'Configured but stopped'; st.style.color = 'var(--solar)'; }
+    } else {
+      if (dot) dot.className = 'dot red';
+      if (st)  { st.textContent = 'Installed — not set up yet'; st.style.color = 'var(--text3)'; }
+    }
+    if (urlEl) urlEl.innerHTML = j.url
+      ? `<a href="${j.url}" target="_blank" style="color:var(--solar)">${j.url}</a>` : '--';
+
+    if (j.configured) {
+      manage.style.display = 'block'; setup.style.display = 'none';
+      const inp = document.getElementById('cf-host');
+      if (inp && !inp.value) inp.value = j.hostname || '';
+    } else {
+      manage.style.display = 'none'; setup.style.display = 'block';
+      setup.innerHTML = 'cloudflared is installed but the tunnel isn\'t connected yet. '
+        + 'Run the one-time setup on the Pi:<br><code>cd /opt/solar-bridge &amp;&amp; '
+        + 'bash setup_cloudflare.sh solar.yourdomain.com</code><br>'
+        + '(needs a browser login — see CLOUDFLARE_TUNNEL.md). After that, manage it here.';
+    }
+  } catch(e) {
+    if (st) st.textContent = '--';
+  }
+}
+
+async function cfRestart() {
+  const msg = document.getElementById('cf-msg');
+  msg.textContent = 'Restarting tunnel...'; msg.style.color = 'var(--solar)';
+  const j = await (await fetch('/api/cloudflare/restart', {method:'POST'})).json();
+  msg.textContent = j.ok ? '✓ Tunnel restarted' : ('Failed: ' + (j.msg||''));
+  msg.style.color = j.ok ? 'var(--battery)' : 'var(--load)';
+  setTimeout(loadCloudflare, 1500);
+}
+
+async function cfSetHostname() {
+  const host = document.getElementById('cf-host').value.trim().toLowerCase();
+  const msg = document.getElementById('cf-msg');
+  if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(host)) {
+    msg.textContent = 'Enter a valid hostname like solar.yourdomain.com';
+    msg.style.color = 'var(--load)'; return;
+  }
+  if (!confirm(`Change the public URL to https://${host}?\n\nThe domain must already be on your Cloudflare account.`)) return;
+  msg.textContent = 'Updating tunnel + DNS...'; msg.style.color = 'var(--solar)';
+  const j = await (await fetch('/api/cloudflare/hostname', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({hostname: host})})).json();
+  if (j.ok) {
+    msg.innerHTML = `✓ Now at <a href="${j.url}" target="_blank" style="color:var(--solar)">${j.url}</a>`
+      + (j.route === 'ok' ? ' (DNS created)' : ' (DNS may need a minute)');
+    msg.style.color = 'var(--battery)';
+  } else {
+    msg.textContent = 'Failed: ' + (j.msg || 'unknown');
+    msg.style.color = 'var(--load)';
+  }
+  setTimeout(loadCloudflare, 2000);
 }
 
 async function tsToggle(action) {
