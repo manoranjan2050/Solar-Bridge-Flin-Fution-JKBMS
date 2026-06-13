@@ -326,7 +326,17 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 /* ── LOG BOX ── */
 .log-box{background:var(--bg0);border:1px solid var(--border);border-radius:10px;
   padding:14px;font-family:'Cascadia Code','Fira Code',monospace;font-size:.75rem;
-  color:#4ade80;height:280px;overflow-y:auto;white-space:pre-wrap;line-height:1.6}
+  color:#cbd5e1;height:360px;overflow-y:auto;line-height:1.55}
+.log-line{display:flex;gap:7px;align-items:baseline;padding:1px 4px;border-radius:4px;white-space:pre-wrap;word-break:break-word}
+.log-line:hover{background:rgba(255,255,255,.04)}
+.log-ic{flex:0 0 auto;width:13px;text-align:center;font-size:.72rem;opacity:.9}
+.log-txt{flex:1 1 auto}
+.log-line.err  {color:#fca5a5} .log-line.err  .log-ic{color:#f43f5e}
+.log-line.warn {color:#fcd34d} .log-line.warn .log-ic{color:#f59e0b}
+.log-line.ok   {color:#86efac} .log-line.ok   .log-ic{color:#10b981}
+.log-line.info {color:#93c5fd} .log-line.info .log-ic{color:#3b82f6}
+.log-line.dim  {color:#94a3b8} .log-line.dim  .log-ic{color:#64748b}
+.log-line .log-ts{color:#64748b}
 
 /* ── FOOTER ── */
 footer{height:var(--ftr);background:var(--bg1);border-top:1px solid var(--border);
@@ -2645,6 +2655,31 @@ async function doRestore() {
   inp.value='';
 }
 
+function classifyLog(line) {
+  const l = line.toLowerCase();
+  if (/\b(err|error|fail|failed|fatal|critical|crit|nak|refused|denied|traceback|exception|unable|cannot)\b/.test(l))
+    return {cls:"err",  ic:"fa-circle-xmark"};
+  if (/\b(warn|warning|retry|retrying|timeout|timed out|degrad|disconnect|lost)\b/.test(l))
+    return {cls:"warn", ic:"fa-triangle-exclamation"};
+  if (/\b(ack|ok|success|registered|connected|started|active|online|running|healthy|enabled|pass)\b/.test(l))
+    return {cls:"ok",   ic:"fa-circle-check"};
+  if (/\binfo\b/.test(l))
+    return {cls:"info", ic:"fa-circle-info"};
+  return {cls:"dim", ic:"fa-angle-right"};
+}
+
+function renderLogLine(line) {
+  const c = classifyLog(line);
+  const m = line.match(/^(\S{19,35})\s+(.*)$/);
+  const ts = m ? m[1] : "";
+  const rest = m ? m[2] : line;
+  const esc = s => s.replace(/[&<>]/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[ch]));
+  const tsHtml = ts ? '<span class="log-ts">' + esc(ts) + '</span> ' : '';
+  return '<div class="log-line ' + c.cls + '">'
+       + '<span class="log-ic"><i class="fa ' + c.ic + '"></i></span>'
+       + '<span class="log-txt">' + tsHtml + esc(rest) + '</span></div>';
+}
+
 async function fetchLogs() {
   const el = document.getElementById('log-out');
   const src   = (document.getElementById('log-source')||{}).value || 'bridge';
@@ -2652,7 +2687,9 @@ async function fetchLogs() {
   try {
     const r = await fetch(`/api/logs?source=${src}&lines=${lines}`);
     const j = await r.json();
-    el.textContent = j.logs || '(no logs)';
+    const raw = (j.logs || '').replace(/\s+$/,'');
+    if (!raw) { el.innerHTML = '<div class="log-line dim">(no logs)</div>'; return; }
+    el.innerHTML = raw.split('\n').map(renderLogLine).join('');
     el.scrollTop = el.scrollHeight;
   } catch(e) { el.textContent = 'Error loading logs: ' + e; }
 }
