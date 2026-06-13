@@ -1,0 +1,7 @@
+[Unit]
+Description=Solar Bridge failover WiFi hotspot (raise AP when internet is down)
+After=NetworkManager.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/solar-bridge/failsafe_hotspot.sh

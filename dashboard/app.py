@@ -478,15 +478,58 @@ def service_action(action):
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500
 
+LOG_SOURCES = {
+    "bridge":     (["-u", "solar-bridge"],    "Solar Bridge (inverter + BMS)"),
+    "dashboard":  (["-u", "solar-dashboard"], "Dashboard (web server)"),
+    "cloudflare": (["-u", "cloudflared"],     "Cloudflare Tunnel"),
+    "tailscale":  (["-u", "tailscaled"],      "Tailscale (remote access)"),
+    "network":    (["-u", "NetworkManager"],  "Network / WiFi"),
+    "backup":     (["-u", "solar-backup"],    "Backups"),
+    "system":     ([],                        "System (everything, recent)"),
+}
+
 @app.route("/api/logs")
 def api_logs():
+    source = request.args.get("source", "bridge")
     try:
-        r = subprocess.run(
-            ["sudo","journalctl","-u","solar-bridge","-n","50","--no-pager","--output=cat"],
-            capture_output=True, text=True)
-        return jsonify({"logs": r.stdout})
+        lines = max(20, min(500, int(request.args.get("lines", "80"))))
+    except ValueError:
+        lines = 80
+    unit_args, _ = LOG_SOURCES.get(source, LOG_SOURCES["bridge"])
+    try:
+        cmd = ["sudo", "journalctl", *unit_args, "-n", str(lines),
+               "--no-pager", "--output=short-iso"]
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        out = r.stdout or r.stderr
+        if not out.strip():
+            out = "(no log entries for this source yet)"
+        return jsonify({"logs": out, "source": source})
     except Exception as e:
-        return jsonify({"logs": str(e)})
+        return jsonify({"logs": str(e), "source": source})
+
+@app.route("/api/logs/sources")
+def api_log_sources():
+    return jsonify([{"id": k, "label": v[1]} for k, v in LOG_SOURCES.items()])
+
+@app.route("/api/logs/download")
+@login_required
+def api_logs_download():
+    """Download a combined log bundle of all sources (great for troubleshooting)."""
+    from flask import Response
+    parts = []
+    for sid, (unit_args, label) in LOG_SOURCES.items():
+        parts.append(f"\n{'='*70}\n  {label}  [{sid}]\n{'='*70}")
+        try:
+            cmd = ["sudo", "journalctl", *unit_args, "-n", "200",
+                   "--no-pager", "--output=short-iso"]
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+            parts.append(r.stdout.strip() or "(no entries)")
+        except Exception as e:
+            parts.append(f"(error: {e})")
+    bundle = "\n".join(parts)
+    fn = f"solar-bridge-logs-{datetime.now():%Y%m%d-%H%M%S}.txt"
+    return Response(bundle, mimetype="text/plain",
+                    headers={"Content-Disposition": f"attachment; filename={fn}"})
 
 @app.route("/api/sysinfo")
 def api_sysinfo():

@@ -61,6 +61,7 @@ sudo cp "$HOME/.cloudflared/$TUNNEL_ID.json" /etc/cloudflared/ 2>/dev/null || tr
 sudo tee /etc/cloudflared/config.yml > /dev/null << YAML
 tunnel: $TUNNEL_ID
 credentials-file: /etc/cloudflared/$TUNNEL_ID.json
+protocol: http2
 
 ingress:
   - hostname: $HOSTNAME_FQDN

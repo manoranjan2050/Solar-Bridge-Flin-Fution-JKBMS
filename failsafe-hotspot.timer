@@ -1,0 +1,10 @@
+[Unit]
+Description=Check internet every 2 min; raise failover hotspot if down
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=2min
+AccuracySec=20s
+
+[Install]
+WantedBy=timers.target

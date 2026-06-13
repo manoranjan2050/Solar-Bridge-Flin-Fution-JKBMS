@@ -232,8 +232,9 @@ cp "$SRC_DIR/solar_bridge.py"   "$INSTALL_DIR/"
 cp "$SRC_DIR/solar_db.py"       "$INSTALL_DIR/"
 cp "$SRC_DIR/notifier.py"       "$INSTALL_DIR/"
 cp "$SRC_DIR/automation.py"     "$INSTALL_DIR/"
-cp "$SRC_DIR/backup_manager.py" "$INSTALL_DIR/" 2>/dev/null || true
-cp "$SRC_DIR/cf_manage.sh"      "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/cf_manage.sh" || true
+cp "$SRC_DIR/backup_manager.py"   "$INSTALL_DIR/" 2>/dev/null || true
+cp "$SRC_DIR/cf_manage.sh"        "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/cf_manage.sh" || true
+cp "$SRC_DIR/failsafe_hotspot.sh" "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/failsafe_hotspot.sh" || true
 [[ -f "$SRC_DIR/automation.json" ]] && cp "$SRC_DIR/automation.json" "$INSTALL_DIR/"
 ok "Bridge + modules copied"
 
@@ -366,6 +367,17 @@ if [[ -f "$SRC_DIR/solar-backup.service" ]]; then
     sudo cp "$SRC_DIR/solar-backup.timer" /etc/systemd/system/
     sudo systemctl enable solar-backup.timer
     ok "Nightly backup timer installed (02:30 daily)"
+fi
+
+# Failover WiFi hotspot — raise an AP on wlan0 when internet is down
+if [[ -f "$SRC_DIR/failsafe-hotspot.service" ]]; then
+    sudo cp "$SRC_DIR/failsafe-hotspot.service" /etc/systemd/system/
+    sudo cp "$SRC_DIR/failsafe-hotspot.timer"   /etc/systemd/system/
+    sudo systemctl enable failsafe-hotspot.timer 2>/dev/null || true
+    # make sure WiFi is usable for the hotspot (country + managed)
+    sudo raspi-config nonint do_wifi_country IN 2>/dev/null || true
+    sudo nmcli radio wifi on 2>/dev/null || true
+    ok "Failover hotspot installed (SSID 'SolarBridge' when internet drops)"
 fi
 
 # Hardware watchdog — auto-reboot if the Pi ever hard-freezes

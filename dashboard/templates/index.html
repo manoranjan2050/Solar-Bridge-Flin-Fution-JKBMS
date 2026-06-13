@@ -1317,9 +1317,27 @@ aside#sidebar{display:flex;flex-direction:column}
 <!-- LOGS PAGE -->
 <div class="page" id="page-logs">
   <div class="page-title"><i class="fa fa-terminal"></i> Live Logs</div>
-  <div style="display:flex;gap:10px;margin-bottom:12px">
-    <button class="btn btn-primary" onclick="fetchLogs()"><i class="fa fa-rotate"></i> Refresh</button>
-    <button class="btn btn-secondary" onclick="document.getElementById('log-out').textContent=''">Clear</button>
+  <div style="display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+    <select id="log-source" onchange="fetchLogs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text1);font-size:.85rem">
+      <option value="bridge">Solar Bridge (inverter + BMS)</option>
+      <option value="dashboard">Dashboard (web server)</option>
+      <option value="cloudflare">Cloudflare Tunnel</option>
+      <option value="tailscale">Tailscale (remote access)</option>
+      <option value="network">Network / WiFi</option>
+      <option value="backup">Backups</option>
+      <option value="system">System (everything)</option>
+    </select>
+    <select id="log-lines" onchange="fetchLogs()" style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:8px 10px;color:var(--text1);font-size:.85rem">
+      <option value="80">80 lines</option>
+      <option value="150">150 lines</option>
+      <option value="300">300 lines</option>
+      <option value="500">500 lines</option>
+    </select>
+    <button class="btn btn-primary btn-sm" onclick="fetchLogs()"><i class="fa fa-rotate"></i> Refresh</button>
+    <label style="font-size:.82rem;display:flex;align-items:center;gap:6px;cursor:pointer">
+      <input type="checkbox" id="log-auto" onchange="toggleLogAuto()"> Auto-refresh
+    </label>
+    <a class="btn btn-secondary btn-sm" href="/api/logs/download" download><i class="fa fa-download"></i> Download all</a>
   </div>
   <div class="log-box" id="log-out">Loading...</div>
 </div>
@@ -2629,10 +2647,21 @@ async function doRestore() {
 
 async function fetchLogs() {
   const el = document.getElementById('log-out');
-  const r = await fetch('/api/logs');
-  const j = await r.json();
-  el.textContent = j.logs || '(no logs)';
-  el.scrollTop = el.scrollHeight;
+  const src   = (document.getElementById('log-source')||{}).value || 'bridge';
+  const lines = (document.getElementById('log-lines')||{}).value || '80';
+  try {
+    const r = await fetch(`/api/logs?source=${src}&lines=${lines}`);
+    const j = await r.json();
+    el.textContent = j.logs || '(no logs)';
+    el.scrollTop = el.scrollHeight;
+  } catch(e) { el.textContent = 'Error loading logs: ' + e; }
+}
+
+let _logTimer = null;
+function toggleLogAuto() {
+  const on = document.getElementById('log-auto').checked;
+  if (on) { fetchLogs(); _logTimer = setInterval(fetchLogs, 5000); }
+  else if (_logTimer) { clearInterval(_logTimer); _logTimer = null; }
 }
 
 // ── History & Charts ───────────────────────────────────────────────────────

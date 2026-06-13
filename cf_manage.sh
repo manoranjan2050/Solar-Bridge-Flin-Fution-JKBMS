@@ -44,10 +44,11 @@ case "$ACTION" in
     PORT=$(grep -oE 'localhost:[0-9]+' "$CFG" | head -1 | cut -d: -f2); PORT="${PORT:-8080}"
     [[ -n "$TUNNEL_ID" ]] || { emit "error=no tunnel id in config"; exit 1; }
 
-    # rewrite config with the new hostname
+    # rewrite config with the new hostname (keep http2 — QUIC/UDP is unreliable on many ISPs)
     cat > "$CFG" <<YAML
 tunnel: $TUNNEL_ID
 credentials-file: $CREDS
+protocol: http2
 
 ingress:
   - hostname: $NEW
