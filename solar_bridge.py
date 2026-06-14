@@ -695,6 +695,7 @@ class JKBMS:
         def u8(off):  return frame[off] if off < len(frame) else None
         def u16(off): return struct.unpack_from("<H", frame, off)[0] if off+2<=len(frame) else None
         def u32(off): return struct.unpack_from("<I", frame, off)[0] if off+4<=len(frame) else None
+        def s32(off): return struct.unpack_from("<i", frame, off)[0] if off+4<=len(frame) else None
 
         # Cell voltages
         cells = []
@@ -712,6 +713,15 @@ class JKBMS:
         v = u32(150)
         if v and 10_000 < v < 120_000:
             data["battery_voltage"] = round(v / 1000, 2)
+
+        # Per-pack current: int32 LE @ +158, milliamps, signed (+charge / -discharge).
+        # Confirmed by cross-referencing the inverter's total: BMS1+BMS2 sum ≈ inverter.
+        cur = s32(158)
+        if cur is not None and abs(cur) < 600_000:        # < 600 A sanity
+            amps = round(cur / 1000, 2)
+            data["battery_current"] = amps
+            if "battery_voltage" in data:
+                data["battery_power"] = round(data["battery_voltage"] * amps, 1)
 
         rc = u32(174)
         if rc and rc < 1_000_000:
@@ -752,6 +762,8 @@ class JKBMS:
 
 BMS_SENSORS = [
     ("battery_voltage",       "Battery Voltage",     "V",   "voltage",     "measurement"),
+    ("battery_current",       "Battery Current",     "A",   "current",     "measurement"),
+    ("battery_power",         "Battery Power",       "W",   "power",       "measurement"),
     ("battery_soc",           "State of Charge",     "%",   "battery",     "measurement"),
     ("battery_cycles",        "Cycle Count",         None,  None,          "total_increasing"),
     ("remaining_capacity_ah", "Remaining Capacity",  "Ah",  None,          "measurement"),
@@ -768,6 +780,8 @@ BMS_SENSORS = [
 
 COMBINED_SENSORS = [
     ("battery_voltage",           "Battery Voltage",           "V",   "voltage",  "measurement"),
+    ("battery_current",           "Battery Current",           "A",   "current",  "measurement"),
+    ("battery_power",             "Battery Power",             "W",   "power",    "measurement"),
     ("battery_soc",               "State of Charge",           "%",   "battery",  "measurement"),
     ("total_remaining_capacity",  "Total Remaining Capacity",  "Ah",  None,       "measurement"),
     ("total_design_capacity",     "Total Design Capacity",     "Ah",  None,       "measurement"),
@@ -1110,8 +1124,14 @@ def main():
                     all_des = [d.get("design_capacity_ah")    for d in all_bms.values() if d.get("design_capacity_ah")]
                     all_cm  = [d.get("cell_voltage_min") for d in all_bms.values() if d.get("cell_voltage_min")]
                     all_cx  = [d.get("cell_voltage_max") for d in all_bms.values() if d.get("cell_voltage_max")]
+                    all_cur = [d.get("battery_current") for d in all_bms.values() if d.get("battery_current") is not None]
 
                     if all_v:   pub(client, "solar/bank/battery_voltage",          round(sum(all_v)/len(all_v), 3))
+                    if all_cur:
+                        bank_cur = round(sum(all_cur), 2)               # packs in parallel → currents ADD
+                        bank_v   = round(sum(all_v)/len(all_v), 2) if all_v else 0
+                        pub(client, "solar/bank/battery_current", bank_cur)
+                        pub(client, "solar/bank/battery_power",   round(bank_v * bank_cur, 1))
                     if all_soc: pub(client, "solar/bank/battery_soc",               round(sum(all_soc)/len(all_soc)))
                     if all_t1:  pub(client, "solar/bank/temp_battery_1",            round(sum(all_t1)/len(all_t1), 1))
                     if all_t2:  pub(client, "solar/bank/temp_battery_2",            round(sum(all_t2)/len(all_t2), 1))
@@ -1136,6 +1156,11 @@ def main():
                                 continue
                             latest_state[f"{prefix}_{k2}"] = val
                     if all_v:   latest_state["bank_battery_voltage"] = round(sum(all_v)/len(all_v), 3)
+                    if all_cur:
+                        _bc = round(sum(all_cur), 2)
+                        _bv = round(sum(all_v)/len(all_v), 2) if all_v else 0
+                        latest_state["bank_battery_current"] = _bc
+                        latest_state["bank_battery_power"]   = round(_bv * _bc, 1)
                     if all_soc: latest_state["bank_battery_soc"]     = round(sum(all_soc)/len(all_soc))
                     if all_mos: latest_state["bank_temp_mos"]        = round(sum(all_mos)/len(all_mos), 1)
                     if all_t1:  latest_state["bank_temp_battery_1"]  = round(sum(all_t1)/len(all_t1), 1)
@@ -1154,9 +1179,9 @@ def main():
                     for fid, d in sorted(all_bms.items()):
                         n = BMS_FRAME_IDS.get(fid, f"bms{fid:02x}")[-1]
                         parts.append(f"BMS{n}: {d.get('battery_voltage','?')}V "
+                                     f"{d.get('battery_current','?')}A "
                                      f"SOC={d.get('battery_soc','?')}% "
-                                     f"T={d.get('temp_mos','?')}°C "
-                                     f"cy={d.get('battery_cycles','?')}")
+                                     f"T={d.get('temp_mos','?')}°C")
                     if all_rem:
                         parts.append(f"BANK: {sum(all_v)/len(all_v):.2f}V "
                                      f"SOC={round(sum(all_soc)/len(all_soc))}% "

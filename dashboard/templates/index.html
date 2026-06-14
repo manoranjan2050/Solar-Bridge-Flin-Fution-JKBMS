@@ -750,6 +750,7 @@ aside#sidebar{display:flex;flex-direction:column}
     <div class="card">
       <div class="card-title"><i class="fa fa-microchip"></i> JK BMS 1 (100 Ah)</div>
       <div class="info-row"><span class="lbl">Voltage</span><span class="val" id="b1-v">-- V</span></div>
+      <div class="info-row"><span class="lbl">Current</span><span class="val" id="b1-cur">-- A</span></div>
       <div class="info-row"><span class="lbl">SOC</span><span class="val" id="b1-soc">--%</span></div>
       <div class="info-row"><span class="lbl">Cell Min</span><span class="val" id="b1-cmin">-- V</span></div>
       <div class="info-row"><span class="lbl">Cell Max</span><span class="val" id="b1-cmax">-- V</span></div>
@@ -763,6 +764,7 @@ aside#sidebar{display:flex;flex-direction:column}
     <div class="card">
       <div class="card-title"><i class="fa fa-microchip"></i> JK BMS 2 (100 Ah)</div>
       <div class="info-row"><span class="lbl">Voltage</span><span class="val" id="b2-v">-- V</span></div>
+      <div class="info-row"><span class="lbl">Current</span><span class="val" id="b2-cur">-- A</span></div>
       <div class="info-row"><span class="lbl">SOC</span><span class="val" id="b2-soc">--%</span></div>
       <div class="info-row"><span class="lbl">Cell Min</span><span class="val" id="b2-cmin">-- V</span></div>
       <div class="info-row"><span class="lbl">Cell Max</span><span class="val" id="b2-cmax">-- V</span></div>
@@ -1916,7 +1918,8 @@ function updateAll() {
 
   // Battery Amps — centre-zero analog gauge: needle left = discharging,
   // centre = idle, right = charging. Colour follows direction + magnitude.
-  const ampsB = parseFloat(D['inverter_battery_current']) || 0;
+  // Prefer the BMS bank current (sum of both packs); fall back to inverter.
+  const ampsB = parseFloat(D['bank_battery_current'] ?? D['inverter_battery_current']) || 0;
   const aCol  = ampColor(ampsB);
   setGauge('gg-bank-amp', 0.5 + ampsB / (2 * AMP_GAUGE_MAX), aCol);
   v('g-amp', (ampsB > 0 ? '+' : '') + ampsB.toFixed(1) + ' A');
@@ -1941,6 +1944,11 @@ function updateAll() {
 
   updatePowerFlow();
 
+  const b1c = D['bms1_battery_current'], b2c = D['bms2_battery_current'];
+  v('b1-cur', b1c!=null ? ((b1c>0?'+':'')+f(b1c,1)+' A') : '-- A');
+  v('b2-cur', b2c!=null ? ((b2c>0?'+':'')+f(b2c,1)+' A') : '-- A');
+  if (b1c!=null) setColor('b1-cur', ampColor(parseFloat(b1c)));
+  if (b2c!=null) setColor('b2-cur', ampColor(parseFloat(b2c)));
   v('b1-v',    f(D['bms1_battery_voltage'],2)+'V');
   v('b1-soc',  pct(D['bms1_battery_soc'])+'%');
   v('b1-cmin', f(D['bms1_cell_voltage_min'],3)+'V');
