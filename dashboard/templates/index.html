@@ -240,6 +240,19 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
   transform-origin:50px 52px}
 .gauge-mini .gm-ticks line{stroke:var(--border);stroke-width:1.5}
 
+/* live PV chip on the generation chart */
+.pv-chip{margin-left:auto;display:inline-flex;align-items:center;gap:6px;
+  background:linear-gradient(90deg,rgba(245,158,11,.16),rgba(245,158,11,.05));
+  border:1px solid rgba(245,158,11,.35);border-radius:20px;padding:4px 12px;
+  font-size:.78rem;font-weight:400;color:var(--text2);font-variant-numeric:tabular-nums}
+.pv-chip b{color:var(--solar);font-size:.95rem;font-weight:700}
+.pv-chip .pvc-sep{opacity:.4}
+.pv-dot{width:8px;height:8px;border-radius:50%;background:var(--solar);
+  box-shadow:0 0 0 0 rgba(245,158,11,.7);animation:pvPulse 1.8s ease-out infinite}
+.pv-dot.idle{background:var(--text3);animation:none;box-shadow:none}
+@keyframes pvPulse{0%{box-shadow:0 0 0 0 rgba(245,158,11,.6)}
+  70%{box-shadow:0 0 0 7px rgba(245,158,11,0)}100%{box-shadow:0 0 0 0 rgba(245,158,11,0)}}
+
 /* battery-page gauge wrappers */
 .gb-wrap{text-align:center;min-width:130px}
 .gb-val{font-size:1.25rem;font-weight:700;line-height:1.1}
@@ -595,9 +608,18 @@ aside#sidebar{display:flex;flex-direction:column}
 
   <!-- Solar generation: today vs typical (forecast) -->
   <div class="card" style="margin-bottom:20px">
-    <div class="card-title"><i class="fa fa-chart-area"></i> Solar Generation — Today vs Typical
-      <span style="font-size:.72rem;color:var(--text3);font-weight:400;margin-left:8px">
-        (dashed = expected from your 7-day average)</span></div>
+    <div class="card-title" style="display:flex;align-items:center;flex-wrap:wrap;gap:6px">
+      <i class="fa fa-chart-area"></i> Solar Generation — Today vs Typical
+      <span style="font-size:.72rem;color:var(--text3);font-weight:400">
+        (dashed = expected from your 7-day average)</span>
+      <span id="pv-live-chip" class="pv-chip">
+        <span class="pv-dot"></span>
+        <b id="pvc-w">-- W</b>
+        <span class="pvc-sep">·</span><span id="pvc-v">-- V</span>
+        <span class="pvc-sep">·</span><span id="pvc-a">-- A</span>
+        <span class="pvc-sep">·</span><span id="pvc-kwh" style="color:var(--solar)">-- kWh today</span>
+      </span>
+    </div>
     <div class="chart-box"><canvas id="chart-forecast"></canvas></div>
   </div>
 
@@ -1765,6 +1787,15 @@ function updateAll() {
   setColor('ov-load',       loadColor(loadW));
   setColor('ov-batt-v',     socColor(socG));
   setColor('ov-grid-power', gridColor(gridW));
+
+  // Live PV chip on the generation chart (V / A / W / kWh today)
+  v('pvc-w',   Math.round(pvW) + ' W');
+  v('pvc-v',   f(D['inverter_pv_input_voltage'],1) + ' V');
+  v('pvc-a',   f(D['inverter_pv_input_current'],1) + ' A');
+  const pvkwh = D['energy_pv_today'] ?? D['energy_pv_kwh'];
+  v('pvc-kwh', (f(pvkwh,2) || '--') + ' kWh today');
+  const pvdot = document.querySelector('#pv-live-chip .pv-dot');
+  if (pvdot) pvdot.classList.toggle('idle', pvW < 15);
 
   // Battery Status card — charging / discharging / resting + time estimate
   (function () {
