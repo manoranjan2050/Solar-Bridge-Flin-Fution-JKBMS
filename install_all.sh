@@ -192,6 +192,8 @@ cell_count = $BMS_CELLS
 username = admin
 password = $DASH_PASS
 hostname = $DASH_HOST
+viewer_username = viewer
+viewer_password =
 
 [alerts]
 enabled = true

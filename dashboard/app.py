@@ -30,34 +30,76 @@ app.config["SECRET_KEY"] = os.environ.get("DASH_SECRET", "solar-bridge-secret-ke
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30   # stay logged in 30 days
 socketio  = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
-# ── Authentication ─────────────────────────────────────────────────────────
+# ── Authentication (admin + view-only roles) ─────────────────────────────────
 def auth_creds():
-    """Return (username, password) from config; password '' means no login."""
+    """Return (username, password) for the ADMIN account; '' password = no login."""
     load_cfg()
     return (cfg.get("dashboard", "username", fallback="admin").split("#")[0].strip(),
             cfg.get("dashboard", "password", fallback="").split("#")[0].strip())
 
+def viewer_creds():
+    """Return (username, password) for the VIEW-ONLY account; '' password = disabled."""
+    load_cfg()
+    return (cfg.get("dashboard", "viewer_username", fallback="viewer").split("#")[0].strip(),
+            cfg.get("dashboard", "viewer_password", fallback="").split("#")[0].strip())
+
+def current_role():
+    """'admin' | 'viewer' | None. If no admin password is set, everyone is admin."""
+    _, pwd = auth_creds()
+    if not pwd:
+        return "admin"               # login disabled → full access (back-compat)
+    return session.get("role")       # set at login
+
 def login_required(f):
+    """Any logged-in user (admin or viewer) may read."""
     @wraps(f)
     def wrapper(*a, **kw):
-        _, pwd = auth_creds()
-        if pwd and not session.get("auth"):
+        if current_role() is None:
             if request.path.startswith("/api/"):
                 return jsonify({"error": "auth required"}), 401
             return redirect(url_for("login"))
         return f(*a, **kw)
     return wrapper
 
+def admin_required(f):
+    """Only the admin may change anything / see secrets. Viewers get 403."""
+    @wraps(f)
+    def wrapper(*a, **kw):
+        role = current_role()
+        if role is None:
+            if request.path.startswith("/api/"):
+                return jsonify({"error": "auth required"}), 401
+            return redirect(url_for("login"))
+        if role != "admin":
+            return jsonify({"ok": False, "error": "view-only account — changes are disabled"}), 403
+        return f(*a, **kw)
+    return wrapper
+
+@app.route("/api/whoami")
+def api_whoami():
+    """Tell the frontend the current role so it can hide controls for viewers."""
+    role = current_role()
+    _, vpwd = viewer_creds()
+    return jsonify({"role": role or "guest", "viewer_enabled": bool(vpwd)})
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     user, pwd = auth_creds()
+    vuser, vpwd = viewer_creds()
     if not pwd:
         return redirect(url_for("index"))
     if request.method == "POST":
         body = request.form
-        if body.get("username") == user and body.get("password") == pwd:
-            session.permanent = True          # honour PERMANENT_SESSION_LIFETIME
+        u, p = body.get("username"), body.get("password")
+        if u == user and p == pwd:
+            session.permanent = True
             session["auth"] = True
+            session["role"] = "admin"
+            return redirect(url_for("index"))
+        if vpwd and u == vuser and p == vpwd:
+            session.permanent = True
+            session["auth"] = True
+            session["role"] = "viewer"
             return redirect(url_for("index"))
         return render_template("login.html", error="Invalid credentials")
     return render_template("login.html", error=None)
@@ -74,7 +116,7 @@ def api_default_user():
     return jsonify({"username": user})
 
 @app.route("/api/change_password", methods=["POST"])
-@login_required
+@admin_required
 def api_change_password():
     body = request.json or {}
     old_user, old_pwd = auth_creds()
@@ -213,7 +255,7 @@ def api_config():
     })
 
 @app.route("/api/config", methods=["POST"])
-@login_required
+@admin_required
 def api_config_save():
     body = request.json or {}
     load_cfg()
@@ -242,7 +284,7 @@ def api_config_save():
 CONTROL_QUEUE = BASE.parent / "control_queue.json"
 
 @app.route("/api/control", methods=["POST"])
-@login_required
+@admin_required
 def api_control():
     body = request.json or {}
     key  = body.get("key","")
@@ -285,7 +327,7 @@ def wifi_scan():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/wifi/connect", methods=["POST"])
-@login_required
+@admin_required
 def wifi_connect():
     body = request.json or {}
     ssid = body.get("ssid","")
@@ -347,7 +389,7 @@ def _public_ip():
     return _pubip_cache["ip"]
 
 @app.route("/api/network/ipinfo")
-@login_required
+@admin_required
 def api_ipinfo():
     """Current IP configuration of the primary connection (for the Network page)."""
     import socket as _socket
@@ -375,7 +417,7 @@ def api_ipinfo():
     return jsonify(info)
 
 @app.route("/api/network/static_ip", methods=["POST"])
-@login_required
+@admin_required
 def api_static_ip():
     """Set a static IP (mode=static) or revert to DHCP (mode=dhcp) via nmcli.
     The change is applied by re-activating the connection, so the dashboard
@@ -450,7 +492,7 @@ def bt_scan():
         return jsonify({"error": str(e)}), 500
 
 @app.route("/api/service/<action>", methods=["POST"])
-@login_required
+@admin_required
 def service_action(action):
     # whole-system reboot
     if action == "reboot":
@@ -512,7 +554,7 @@ def api_log_sources():
     return jsonify([{"id": k, "label": v[1]} for k, v in LOG_SOURCES.items()])
 
 @app.route("/api/logs/download")
-@login_required
+@admin_required
 def api_logs_download():
     """Download a combined log bundle of all sources (great for troubleshooting)."""
     from flask import Response
@@ -586,7 +628,7 @@ def api_alerts():
     return jsonify(db.get_alerts(int(request.args.get("limit", "30"))))
 
 @app.route("/api/alerts/ack", methods=["POST"])
-@login_required
+@admin_required
 def api_alerts_ack():
     if db:
         db.ack_alert(int((request.json or {}).get("id", 0)))
@@ -601,7 +643,7 @@ def api_automation_get():
     return jsonify(automation_mod.load_rules())
 
 @app.route("/api/automation", methods=["POST"])
-@login_required
+@admin_required
 def api_automation_save():
     if not automation_mod:
         return jsonify({"ok": False, "error": "automation module unavailable"}), 500
@@ -628,7 +670,7 @@ NOTIFY_FIELDS = {
 }
 
 @app.route("/api/notify_config")
-@login_required
+@admin_required
 def api_notify_get():
     load_cfg()
     out = {}
@@ -638,7 +680,7 @@ def api_notify_get():
     return jsonify(out)
 
 @app.route("/api/notify_config", methods=["POST"])
-@login_required
+@admin_required
 def api_notify_save():
     body = request.json or {}
     load_cfg()
@@ -663,7 +705,7 @@ def api_notify_save():
     return jsonify({"ok": True})
 
 @app.route("/api/test_alert", methods=["POST"])
-@login_required
+@admin_required
 def api_test_alert():
     """Send a test alert through every enabled channel (Telegram / e-mail / HA)."""
     try:
@@ -690,7 +732,7 @@ def api_cost_get():
     return jsonify(_cost_cfg())
 
 @app.route("/api/cost_config", methods=["POST"])
-@login_required
+@admin_required
 def api_cost_save():
     body = request.json or {}
     load_cfg()
@@ -760,7 +802,7 @@ def api_solar_forecast():
 BACKUP_FILES = ["config.ini", "automation.json", "energy.json"]
 
 @app.route("/api/backup")
-@login_required
+@admin_required
 def api_backup():
     """Download a .zip of settings (config + automation + energy; optionally history)."""
     include_history = request.args.get("history") == "1"
@@ -782,7 +824,7 @@ def api_backup():
     return send_file(mem, mimetype="application/zip", as_attachment=True, download_name=fn)
 
 @app.route("/api/restore", methods=["POST"])
-@login_required
+@admin_required
 def api_restore():
     """Restore settings from an uploaded backup .zip, then restart the bridge."""
     f = request.files.get("file")
@@ -835,7 +877,7 @@ def api_backups_list():
     return jsonify({"backups": items[:30], "next_auto": next_auto})
 
 @app.route("/api/backups/create", methods=["POST"])
-@login_required
+@admin_required
 def api_backups_create():
     body = request.json or {}
     cloud = bool(body.get("cloud"))
@@ -854,7 +896,7 @@ def api_backups_create():
         return jsonify({"ok": False, "msg": str(e)}), 500
 
 @app.route("/api/backups/download/<name>")
-@login_required
+@admin_required
 def api_backups_download(name):
     name = os.path.basename(name)
     p = BACKUP_DIR / name
@@ -863,7 +905,7 @@ def api_backups_download(name):
     return send_file(p, as_attachment=True)
 
 @app.route("/api/backups/delete", methods=["POST"])
-@login_required
+@admin_required
 def api_backups_delete():
     name = os.path.basename((request.json or {}).get("name", ""))
     p = BACKUP_DIR / name
@@ -945,7 +987,7 @@ def api_cloudflare():
     })
 
 @app.route("/api/cloudflare/restart", methods=["POST"])
-@login_required
+@admin_required
 def api_cloudflare_restart():
     r = _cf_call("restart")
     ok = r.get("ok") == "restarted"
@@ -954,7 +996,7 @@ def api_cloudflare_restart():
     return jsonify({"ok": ok, "msg": r.get("_raw", "")})
 
 @app.route("/api/cloudflare/hostname", methods=["POST"])
-@login_required
+@admin_required
 def api_cloudflare_hostname():
     host = (request.json or {}).get("hostname", "").strip().lower()
     if not host:
@@ -967,7 +1009,7 @@ def api_cloudflare_hostname():
     return jsonify({"ok": False, "msg": r.get("error", r.get("_raw", "failed"))}), 400
 
 @app.route("/api/tailscale/toggle", methods=["POST"])
-@login_required
+@admin_required
 def api_tailscale_toggle():
     """Turn Tailscale on/off (the device stays authorised either way)."""
     action = (request.json or {}).get("action", "")

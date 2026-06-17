@@ -437,6 +437,9 @@ aside#sidebar{display:flex;flex-direction:column}
     <div class="hdr-stat load"><div class="val" id="h-load">-- W</div><div>Load</div></div>
     <div class="hdr-stat bat"><div class="val" id="h-soc">--%</div><div>Battery</div></div>
     <div class="bridge-badge" id="bridge-badge">● Connecting</div>
+    <div id="viewer-badge" style="display:none;background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6;
+         padding:4px 10px;border-radius:12px;font-size:.7rem;font-weight:600;white-space:nowrap">
+      <i class="fa fa-eye"></i> View-only</div>
   </div>
 </header>
 
@@ -1727,6 +1730,13 @@ function showPage(id) {
   if (id === 'alerts')  loadAlerts();
   if (id === 'automation') { loadRules(); arActionOpts(); }
   if (id === 'notifications') loadNotify();
+  // viewer: re-disable controls on change-pages whose content builds dynamically
+  if (IS_VIEWER && ['settings','automation','notifications','network','system'].includes(id)) {
+    setTimeout(() => {
+      const p = document.getElementById('page-'+id);
+      if (p) p.querySelectorAll('button, input, select, textarea').forEach(el => el.disabled = true);
+    }, 300);
+  }
   // close sidebar on mobile
   if (window.innerWidth < 900) document.getElementById('sidebar').classList.remove('open');
 }
@@ -3150,7 +3160,32 @@ setInterval(() => {
 }, 1000);
 
 // ── Init ──────────────────────────────────────────────────────────────────
+// ── Role: view-only vs admin ────────────────────────────────────────────────
+let IS_VIEWER = false;
+async function applyRole() {
+  try {
+    const j = await (await fetch('/api/whoami')).json();
+    IS_VIEWER = (j.role === 'viewer');
+  } catch(e) { IS_VIEWER = false; }
+  if (!IS_VIEWER) return;
+  document.body.classList.add('viewer-mode');
+  const b = document.getElementById('viewer-badge'); if (b) b.style.display = '';
+  // Disable every control on the change-only pages (server blocks them too).
+  // Monitoring pages (overview/solar/battery/inverter/history/details/logs) stay interactive.
+  ['page-settings','page-automation','page-notifications','page-network','page-system']
+    .forEach(id => {
+      const p = document.getElementById(id); if (!p) return;
+      p.querySelectorAll('button, input, select, textarea').forEach(el => { el.disabled = true; });
+      const note = document.createElement('div');
+      note.style.cssText = 'background:#1e3a5f;color:#93c5fd;border:1px solid #3b82f6;border-radius:10px;'
+        + 'padding:10px 14px;margin-bottom:14px;font-size:.85rem';
+      note.innerHTML = '<i class="fa fa-eye"></i> <b>View-only account</b> — you can see everything but changes are disabled. Sign in as admin to make changes.';
+      p.insertBefore(note, p.firstChild.nextSibling);
+    });
+}
+
 window.addEventListener('load', async () => {
+  applyRole();
   const r = await fetch('/api/state');
   const s = await r.json();
   Object.assign(D, s);

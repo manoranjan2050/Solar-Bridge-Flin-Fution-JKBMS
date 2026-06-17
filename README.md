@@ -56,6 +56,7 @@ Home Assistant, and Telegram — all running locally on a Raspberry Pi.
 - Float / bulk / shutdown **voltages**
 - Applied straight to the inverter
 - Every change **audited to Telegram**
+- **View-only account** for safe demos
 - Works even if **MQTT is down**
 
 </td>
@@ -239,8 +240,9 @@ port = /dev/ttyUSB0
 cell_count = 16
 
 [dashboard]
-password =             ; blank = no login
+password =             ; admin login; blank = no login
 hostname = solar       ; → http://solar.local:8080
+viewer_password =      ; view-only account — sees all, changes nothing (great for a public demo)
 
 [alerts]
 low_soc = 20

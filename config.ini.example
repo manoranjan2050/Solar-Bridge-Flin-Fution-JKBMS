@@ -20,6 +20,8 @@ cell_count = 16             # adjust to your actual cell count
 username = admin
 password = # blank = no login required
 hostname = solar            # mDNS name → http://solar.local:8080
+viewer_username = viewer    # view-only account (sees everything, changes nothing)
+viewer_password = # blank = disabled; set e.g. 'demo' for a safe public/demo login
 
 [alerts]
 enabled = true
