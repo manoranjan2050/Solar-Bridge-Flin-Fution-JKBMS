@@ -86,10 +86,16 @@ Home Assistant, and Telegram — all running locally on a Raspberry Pi.
 ## 🔌 How it works
 
 <div align="center">
-<img src="assets/flow.svg" alt="Architecture" width="100%">
+<img src="assets/how-it-works.svg" alt="How Solar Bridge works" width="100%">
 </div>
 
-The Raspberry Pi reads the inverter over **USB-HID** (Voltronic PI30) and the dual JK BMS over **RS485**, then serves a local dashboard, publishes to **Home Assistant via MQTT**, and runs a **Telegram bot** — all offline-first. The dashboard reads a local state file and queues commands locally, so a broker outage never blanks your screen.
+Every **10 seconds** the Raspberry Pi polls the inverter over **USB-HID** (Voltronic PI30 commands) and listens to the dual JK BMS **RS485** broadcast. It parses the frames, accumulates energy, writes history to SQLite and a live state file — then fans the data out to three places at once:
+
+1. **📊 Web Dashboard** — gauges, charts and controls at `solar.local:8080` (installable PWA)
+2. **🏠 Home Assistant** — every sensor + control via MQTT auto-discovery (and a custom card)
+3. **💬 Telegram** — alerts, a daily summary, and remote control from anywhere
+
+It's **offline-first**: the dashboard reads the local state file and queues commands locally, so an MQTT broker outage never blanks your screen or stops you controlling the inverter.
 
 ---
 

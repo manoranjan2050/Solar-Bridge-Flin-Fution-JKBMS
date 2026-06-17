@@ -1,0 +1,115 @@
+<svg viewBox="0 0 1160 560" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI',system-ui,sans-serif">
+  <defs>
+    <linearGradient id="bgw" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0d1424"/><stop offset="100%" stop-color="#0a0f1e"/>
+    </linearGradient>
+    <radialGradient id="sun2" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fde68a"/><stop offset="60%" stop-color="#f59e0b"/><stop offset="100%" stop-color="#d97706"/>
+    </radialGradient>
+    <style>
+      @keyframes flow { to { stroke-dashoffset:-44; } }
+      @keyframes spin { to { transform:rotate(360deg); } }
+      @keyframes blip { 0%,100%{opacity:.4} 50%{opacity:1} }
+      .w { stroke-dasharray:8 14; animation:flow 1.1s linear infinite; }
+      .loop { transform-origin:580px 250px; animation:spin 9s linear infinite; }
+      .live { animation:blip 1.6s ease-in-out infinite; }
+    </style>
+  </defs>
+  <rect width="1160" height="560" rx="18" fill="url(#bgw)"/>
+
+  <!-- column headers -->
+  <text x="150" y="46" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b" letter-spacing="2">① HARDWARE</text>
+  <text x="580" y="46" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b" letter-spacing="2">② RASPBERRY PI</text>
+  <text x="1010" y="46" text-anchor="middle" font-size="13" font-weight="700" fill="#64748b" letter-spacing="2">③ YOU SEE IT</text>
+
+  <!-- ===== HARDWARE ===== -->
+  <g>
+    <rect x="40" y="80" width="220" height="120" rx="14" fill="#161f33" stroke="#f59e0b" stroke-width="1.5"/>
+    <circle cx="86" cy="128" r="20" fill="url(#sun2)"/>
+    <text x="118" y="120" font-size="15" font-weight="700" fill="#e2e8f0">Inverter</text>
+    <text x="118" y="140" font-size="11.5" fill="#94a3b8">Voltronic PI30 · USB</text>
+    <text x="60" y="178" font-size="11" fill="#f59e0b" font-family="monospace">QPIGS · QPIRI · QMOD →</text>
+  </g>
+  <g>
+    <rect x="40" y="230" width="220" height="120" rx="14" fill="#161f33" stroke="#10b981" stroke-width="1.5"/>
+    <rect x="62" y="258" width="34" height="50" rx="5" fill="#10b981" opacity=".25" stroke="#10b981"/>
+    <rect x="100" y="258" width="34" height="50" rx="5" fill="#10b981" opacity=".25" stroke="#10b981"/>
+    <text x="148" y="272" font-size="15" font-weight="700" fill="#e2e8f0">2× JK BMS</text>
+    <text x="148" y="292" font-size="11.5" fill="#94a3b8">16S LiFePO₄ · RS485</text>
+    <text x="62" y="332" font-size="11" fill="#10b981" font-family="monospace">← 55 AA EB 90 broadcast</text>
+  </g>
+
+  <!-- wires hardware -> pi -->
+  <line x1="260" y1="140" x2="420" y2="200" stroke="#334155" stroke-width="3"/>
+  <line class="w" x1="260" y1="140" x2="420" y2="200" stroke="#f59e0b" stroke-width="3"/>
+  <line x1="260" y1="290" x2="420" y2="300" stroke="#334155" stroke-width="3"/>
+  <line class="w" x1="260" y1="290" x2="420" y2="300" stroke="#10b981" stroke-width="3"/>
+
+  <!-- ===== PI (brain) ===== -->
+  <rect x="420" y="90" width="320" height="320" rx="18" fill="#13203a" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="580" y="120" text-anchor="middle" font-size="16" font-weight="800" fill="#60a5fa">solar_bridge.py</text>
+
+  <!-- rotating poll loop ring -->
+  <g class="loop" fill="none" stroke="#3b82f6" stroke-width="3" stroke-linecap="round">
+    <path d="M580 175 A 75 75 0 1 1 505 250" stroke-dasharray="0"/>
+    <path d="M505 250 l-9 -14 m9 14 l15 -8" />
+  </g>
+  <text x="580" y="242" text-anchor="middle" font-size="13" fill="#94a3b8">poll loop</text>
+  <text x="580" y="262" text-anchor="middle" font-size="20" font-weight="800" fill="#e2e8f0">every 10s</text>
+
+  <!-- inner steps -->
+  <g font-size="11.5" fill="#cbd5e1">
+    <rect x="446" y="320" width="128" height="30" rx="7" fill="#1c2942" stroke="#2a3a55"/>
+    <text x="510" y="340" text-anchor="middle">parse · CRC · offsets</text>
+    <rect x="586" y="320" width="128" height="30" rx="7" fill="#1c2942" stroke="#2a3a55"/>
+    <text x="650" y="340" text-anchor="middle">accumulate energy</text>
+    <rect x="446" y="360" width="128" height="30" rx="7" fill="#1c2942" stroke="#2a3a55"/>
+    <text x="510" y="380" text-anchor="middle">SQLite history</text>
+    <rect x="586" y="360" width="128" height="30" rx="7" fill="#1c2942" stroke="#2a3a55"/>
+    <text x="650" y="380" text-anchor="middle">live_state.json</text>
+  </g>
+
+  <!-- wires pi -> consumers -->
+  <line x1="740" y1="180" x2="880" y2="135" stroke="#334155" stroke-width="3"/>
+  <line class="w" x1="740" y1="180" x2="880" y2="135" stroke="#3b82f6" stroke-width="3"/>
+  <line x1="740" y1="250" x2="880" y2="280" stroke="#334155" stroke-width="3"/>
+  <line class="w" x1="740" y1="250" x2="880" y2="280" stroke="#a855f7" stroke-width="3"/>
+  <line x1="740" y1="320" x2="880" y2="425" stroke="#334155" stroke-width="3"/>
+  <line class="w" x1="740" y1="320" x2="880" y2="425" stroke="#22d3ee" stroke-width="3"/>
+
+  <!-- ===== CONSUMERS ===== -->
+  <g>
+    <rect x="880" y="90" width="240" height="92" rx="13" fill="#161f33" stroke="#3b82f6" stroke-width="1.5"/>
+    <circle cx="906" cy="118" r="6" fill="#3b82f6"/>
+    <text x="922" y="123" font-size="15" font-weight="700" fill="#e2e8f0">Web Dashboard</text>
+    <text x="900" y="146" font-size="11.5" fill="#94a3b8">gauges · charts · controls</text>
+    <text x="900" y="166" font-size="11.5" fill="#60a5fa">solar.local:8080 · PWA</text>
+  </g>
+  <g>
+    <rect x="880" y="234" width="240" height="92" rx="13" fill="#161f33" stroke="#a855f7" stroke-width="1.5"/>
+    <circle cx="906" cy="262" r="6" fill="#a855f7"/>
+    <text x="922" y="267" font-size="15" font-weight="700" fill="#e2e8f0">Home Assistant</text>
+    <text x="900" y="290" font-size="11.5" fill="#94a3b8">MQTT auto-discovery</text>
+    <text x="900" y="310" font-size="11.5" fill="#c4b5fd">sensors + controls + card</text>
+  </g>
+  <g>
+    <rect x="880" y="378" width="240" height="92" rx="13" fill="#161f33" stroke="#22d3ee" stroke-width="1.5"/>
+    <circle cx="906" cy="406" r="6" fill="#22d3ee"/>
+    <text x="922" y="411" font-size="15" font-weight="700" fill="#e2e8f0">Telegram Bot</text>
+    <text x="900" y="434" font-size="11.5" fill="#94a3b8">alerts · daily summary</text>
+    <text x="900" y="454" font-size="11.5" fill="#67e8f9">remote control, anywhere</text>
+  </g>
+
+  <!-- live data ticker -->
+  <g transform="translate(580,470)">
+    <rect x="-330" y="0" width="660" height="56" rx="12" fill="#0f1a30" stroke="#1e2d49"/>
+    <circle class="live" cx="-302" cy="28" r="6" fill="#10b981"/>
+    <text x="-282" y="33" font-size="12.5" fill="#64748b">LIVE</text>
+    <circle cx="-208" cy="28" r="5" fill="#f59e0b"/>
+    <text x="-194" y="33" font-size="17" font-weight="700" fill="#f59e0b">2714 W solar</text>
+    <circle cx="-20" cy="28" r="5" fill="#10b981"/>
+    <text x="-6" y="33" font-size="17" font-weight="700" fill="#10b981">53.4 V · 81%</text>
+    <circle cx="170" cy="28" r="5" fill="#f43f5e"/>
+    <text x="184" y="33" font-size="17" font-weight="700" fill="#f43f5e">1316 W load</text>
+  </g>
+</svg>
