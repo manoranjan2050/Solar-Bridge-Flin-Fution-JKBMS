@@ -141,13 +141,6 @@ input::placeholder{color:var(--text3)}
       <i class="fa fa-right-to-bracket"></i> Sign In
     </button>
   </form>
-
-  <div class="divider">Default credentials</div>
-  <div class="hint">
-    Username: <strong id="showUser">tap to show</strong><br>
-    Password: <strong id="showPass">tap to show</strong><br>
-    <small style="color:var(--text3)">Tap here to auto-fill username. Change on System page.</small>
-  </div>
 </div>
 
 <div class="author">
@@ -165,14 +158,6 @@ function togglePwd() {
   inp.type = inp.type === 'password' ? 'text' : 'password';
   ico.className = inp.type === 'password' ? 'fa fa-eye' : 'fa fa-eye-slash';
 }
-// hint: fills the inputs from the config (username only, password blank for security)
-document.querySelector('.hint').addEventListener('click', function(){
-  fetch('/api/default_user').then(r=>r.json()).then(d=>{
-    if (d.username) document.getElementById('username').value = d.username;
-    document.getElementById('showUser').textContent = d.username||'admin';
-    document.getElementById('showPass').textContent = '(set in config.ini)';
-  }).catch(()=>{});
-});
 document.getElementById('loginForm').addEventListener('submit', function(){
   const btn = document.getElementById('submitBtn');
   btn.classList.add('loading');

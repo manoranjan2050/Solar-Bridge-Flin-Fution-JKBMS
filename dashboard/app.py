@@ -25,9 +25,33 @@ try:
 except Exception:
     automation_mod = None
 
+def _session_secret():
+    """A per-install random secret key — NEVER hardcoded (this repo is public).
+    Order: $DASH_SECRET env → persisted random file → generate & persist."""
+    env = os.environ.get("DASH_SECRET")
+    if env:
+        return env
+    key_file = BASE.parent / ".session_secret"
+    try:
+        if key_file.exists():
+            k = key_file.read_text().strip()
+            if len(k) >= 32:
+                return k
+        import secrets
+        k = secrets.token_hex(32)
+        key_file.write_text(k)
+        try: os.chmod(key_file, 0o600)
+        except Exception: pass
+        return k
+    except Exception:
+        import secrets
+        return secrets.token_hex(32)   # last resort: random per-process
+
 app       = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get("DASH_SECRET", "solar-bridge-secret-key-2025")
+app.config["SECRET_KEY"] = _session_secret()
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30   # stay logged in 30 days
+app.config["SESSION_COOKIE_HTTPONLY"] = True                   # JS can't read the cookie
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"                  # CSRF hardening
 socketio  = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
 # ── Authentication (admin + view-only roles) ─────────────────────────────────
@@ -82,6 +106,33 @@ def api_whoami():
     _, vpwd = viewer_creds()
     return jsonify({"role": role or "guest", "viewer_enabled": bool(vpwd)})
 
+import hmac as _hmac
+def _eq(a, b):
+    """Constant-time string compare (avoids password timing leaks)."""
+    return _hmac.compare_digest(str(a or ""), str(b or ""))
+
+# Simple in-memory brute-force throttle: per-IP failed-attempt counter.
+_login_fails = {}            # ip → [count, first_ts]
+_LOGIN_MAX, _LOGIN_WINDOW = 8, 300   # 8 tries / 5 min
+
+def _throttled(ip):
+    rec = _login_fails.get(ip)
+    if not rec:
+        return False
+    count, first = rec
+    if time.time() - first > _LOGIN_WINDOW:
+        _login_fails.pop(ip, None)
+        return False
+    return count >= _LOGIN_MAX
+
+def _record_fail(ip):
+    now = time.time()
+    rec = _login_fails.get(ip)
+    if not rec or now - rec[1] > _LOGIN_WINDOW:
+        _login_fails[ip] = [1, now]
+    else:
+        rec[0] += 1
+
 @app.route("/login", methods=["GET", "POST"])
 def login():
     user, pwd = auth_creds()
@@ -89,18 +140,25 @@ def login():
     if not pwd:
         return redirect(url_for("index"))
     if request.method == "POST":
+        ip = request.remote_addr or "?"
+        if _throttled(ip):
+            return render_template("login.html",
+                                   error="Too many attempts — wait a few minutes."), 429
         body = request.form
         u, p = body.get("username"), body.get("password")
-        if u == user and p == pwd:
+        if _eq(u, user) and _eq(p, pwd):
+            _login_fails.pop(ip, None)
             session.permanent = True
             session["auth"] = True
             session["role"] = "admin"
             return redirect(url_for("index"))
-        if vpwd and u == vuser and p == vpwd:
+        if vpwd and _eq(u, vuser) and _eq(p, vpwd):
+            _login_fails.pop(ip, None)
             session.permanent = True
             session["auth"] = True
             session["role"] = "viewer"
             return redirect(url_for("index"))
+        _record_fail(ip)
         return render_template("login.html", error="Invalid credentials")
     return render_template("login.html", error=None)
 
@@ -108,12 +166,6 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for("login"))
-
-@app.route("/api/default_user")
-def api_default_user():
-    """Return the configured dashboard username (not the password)."""
-    user, _ = auth_creds()
-    return jsonify({"username": user})
 
 @app.route("/api/change_password", methods=["POST"])
 @admin_required
@@ -227,6 +279,7 @@ def pwa_manifest():
 LIVE_PATH = BASE.parent / "live_state.json"
 
 @app.route("/api/state")
+@login_required
 def api_state():
     # live_state.json is written by the bridge from the USB reads, so the
     # dashboard shows data even when MQTT is unavailable. Live MQTT values
@@ -241,10 +294,11 @@ def api_state():
     return jsonify({**live, **state, **{f"energy_{k}": v for k, v in nrg.items()}})
 
 @app.route("/api/config")
+@admin_required
 def api_config():
     load_cfg()
     return jsonify({
-        "mqtt_host":     cfg.get("mqtt","host","fallback","").split("#")[0].strip(),
+        "mqtt_host":     cfg.get("mqtt","host",fallback="").split("#")[0].strip(),
         "mqtt_port":     cfg.get("mqtt","port",fallback="1883").split("#")[0].strip(),
         "mqtt_user":     cfg.get("mqtt","username",fallback="").split("#")[0].strip(),
         "inv_port":      cfg.get("inverter","port",fallback="/dev/hidraw0").split("#")[0].strip(),
@@ -306,6 +360,7 @@ def api_control():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 @app.route("/api/wifi/scan")
+@admin_required
 def wifi_scan():
     try:
         r = subprocess.run(
@@ -347,6 +402,7 @@ def wifi_connect():
         return jsonify({"ok": False, "msg": str(e)}), 500
 
 @app.route("/api/wifi/status")
+@admin_required
 def wifi_status():
     try:
         r = subprocess.run(["nmcli","-t","-f","DEVICE,STATE,CONNECTION","dev"],
@@ -476,6 +532,7 @@ def api_static_ip():
         return jsonify({"ok": False, "msg": str(e)}), 500
 
 @app.route("/api/bluetooth/scan")
+@admin_required
 def bt_scan():
     try:
         r = subprocess.run(["bluetoothctl","scan","on"],
@@ -531,6 +588,7 @@ LOG_SOURCES = {
 }
 
 @app.route("/api/logs")
+@login_required
 def api_logs():
     source = request.args.get("source", "bridge")
     try:
@@ -550,6 +608,7 @@ def api_logs():
         return jsonify({"logs": str(e), "source": source})
 
 @app.route("/api/logs/sources")
+@login_required
 def api_log_sources():
     return jsonify([{"id": k, "label": v[1]} for k, v in LOG_SOURCES.items()])
 
@@ -574,6 +633,7 @@ def api_logs_download():
                     headers={"Content-Disposition": f"attachment; filename={fn}"})
 
 @app.route("/api/sysinfo")
+@login_required
 def api_sysinfo():
     info = {}
     try:
@@ -857,7 +917,7 @@ def api_restore():
 BACKUP_DIR = BASE.parent / "backups"
 
 @app.route("/api/backups")
-@login_required
+@admin_required
 def api_backups_list():
     items = []
     if BACKUP_DIR.exists():
@@ -916,7 +976,7 @@ def api_backups_delete():
 
 # ── Tailscale (remote access) status + simple controls ───────────────────────
 @app.route("/api/tailscale")
-@login_required
+@admin_required
 def api_tailscale():
     info = {"installed": False, "running": False, "ip": "", "auth_url": "",
             "dns_name": "", "url": "", "state": ""}
@@ -973,7 +1033,7 @@ def _cf_call(*args):
         return {"_raw": str(e), "_rc": 1, "error": str(e)}
 
 @app.route("/api/cloudflare")
-@login_required
+@admin_required
 def api_cloudflare():
     r = _cf_call("status")
     host = r.get("host", "")
@@ -1028,7 +1088,11 @@ def api_tailscale_toggle():
 # ── SocketIO events ──────────────────────────────────────────────────────────
 @socketio.on("connect")
 def on_connect():
-    socketio.emit("full_state", state)
+    # Reject unauthenticated socket connections (don't leak live data past the login).
+    if current_role() is None:
+        return False
+    # Send the snapshot only to THIS client, not broadcast to everyone.
+    socketio.emit("full_state", state, to=request.sid)
 
 if __name__ == "__main__":
     load_cfg()
