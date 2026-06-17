@@ -288,9 +288,18 @@ If this helped you, a ⭐ is appreciated!
 
 Released under the **MIT License** — free to use, modify and share.
 
+### 👥 Authors
+
+<table>
+<tr>
+<td align="center"><a href="https://github.com/manoranjan2050"><img src="https://github.com/manoranjan2050.png" width="70" style="border-radius:50%"><br><b>Manoranjan</b></a><br><sub>Creator & maintainer</sub></td>
+<td align="center"><a href="https://github.com/ElectroIoT"><img src="https://github.com/ElectroIoT.png" width="70" style="border-radius:50%"><br><b>ElectroIoT</b></a><br><sub>Co-author</sub></td>
+</tr>
+</table>
+
 <div align="center">
 <br>
-<sub>☀️ Built with care by <a href="https://github.com/manoranjan2050">Manoranjan</a> — replacing paid software, one Raspberry Pi at a time.</sub>
+<sub>☀️ Built with care by <a href="https://github.com/manoranjan2050">Manoranjan</a> &amp; <a href="https://github.com/ElectroIoT">ElectroIoT</a> — replacing paid software, one Raspberry Pi at a time.</sub>
 <br><br>
 
 [![Star History](https://img.shields.io/badge/⭐_Star_this_repo-f59e0b?style=for-the-badge)](https://github.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS)
