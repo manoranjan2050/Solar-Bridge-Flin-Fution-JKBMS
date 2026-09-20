@@ -1317,6 +1317,31 @@ aside#sidebar{display:flex;flex-direction:column}
     </div>
   </div>
 
+  <!-- Mobile App / API Token -->
+  <div class="card" style="grid-column:1/-1;margin-top:16px" id="api-token-card">
+    <div class="card-title"><i class="fa fa-mobile-screen-button"></i> Mobile App / API Access</div>
+    <p style="font-size:.85rem;color:var(--text2);line-height:1.6;margin-bottom:14px">
+      Paste this token into the Solar Bridge mobile app's setup screen along with this
+      dashboard's address (or your Cloudflare Tunnel domain). The app sends it as
+      <code>Authorization: Bearer &lt;token&gt;</code> on every request — treat it like a password.
+    </p>
+    <div class="form-grid">
+      <div class="form-group" style="grid-column:1/-1">
+        <label>API Token</label>
+        <div style="display:flex;gap:8px">
+          <input id="api-token-val" type="password" readonly value="••••••••••••••••••••••••••••••••">
+          <button class="btn btn-secondary btn-sm" onclick="toggleTokenVisible()"><i class="fa fa-eye" id="api-token-eye"></i></button>
+          <button class="btn btn-secondary btn-sm" onclick="copyApiToken()"><i class="fa fa-copy"></i> Copy</button>
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:6px;align-items:center">
+      <button class="btn btn-danger btn-sm" onclick="regenerateApiToken()">
+        <i class="fa fa-rotate"></i> Regenerate Token</button>
+      <span style="font-size:.8rem;color:var(--text3)">Regenerating signs out every app using the old token immediately.</span>
+    </div>
+  </div>
+
   <!-- Backup & Restore -->
   <div class="card" style="grid-column:1/-1;margin-top:16px">
     <div class="card-title"><i class="fa fa-box-archive"></i> Backup &amp; Restore</div>
@@ -1720,7 +1745,7 @@ function showPage(id) {
   document.getElementById('page-'+id).classList.add('active');
   event && event.currentTarget && event.currentTarget.classList.add('active');
   if (id === 'network') { loadConfig(); loadIpInfo(); loadNetOverview(); loadCloudflare(); }
-  if (id === 'system')  loadSysInfo();
+  if (id === 'system')  { loadSysInfo(); loadApiToken(); }
   if (id === 'logs')    fetchLogs();
   if (id === 'overview') loadForecast();
   if (id === 'history') loadHistory();
@@ -2686,6 +2711,48 @@ async function changePassword() {
       toast(j.error||'Failed','err');
     }
   } catch(e) { msg.style.color='var(--load)'; msg.textContent='Error: '+e; }
+}
+
+let _apiToken = null;
+async function loadApiToken() {
+  try {
+    const r = await fetch('/api/token');
+    if (!r.ok) return;
+    const j = await r.json();
+    _apiToken = j.token;
+  } catch(e) { /* not admin, or offline — token card just stays masked */ }
+}
+function toggleTokenVisible() {
+  const inp = document.getElementById('api-token-val');
+  const eye = document.getElementById('api-token-eye');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    inp.value = _apiToken || '(unavailable — reload the page)';
+    eye.className = 'fa fa-eye-slash';
+  } else {
+    inp.type = 'password';
+    inp.value = '••••••••••••••••••••••••••••••••';
+    eye.className = 'fa fa-eye';
+  }
+}
+async function copyApiToken() {
+  if (!_apiToken) { toast('Token not loaded yet','err'); return; }
+  try {
+    await navigator.clipboard.writeText(_apiToken);
+    toast('Token copied to clipboard','ok');
+  } catch(e) { toast('Copy failed — select the field manually','err'); }
+}
+async function regenerateApiToken() {
+  if (!confirm('Regenerate the API token? Every mobile app using the old one will stop working until you re-enter the new token.')) return;
+  try {
+    const r = await fetch('/api/token/regenerate', {method:'POST'});
+    const j = await r.json();
+    _apiToken = j.token;
+    document.getElementById('api-token-val').type = 'password';
+    document.getElementById('api-token-val').value = '••••••••••••••••••••••••••••••••';
+    document.getElementById('api-token-eye').className = 'fa fa-eye';
+    toast('New token issued','ok');
+  } catch(e) { toast('Regenerate failed','err'); }
 }
 
 async function doRestore() {
