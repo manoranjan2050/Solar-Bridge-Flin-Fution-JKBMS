@@ -11,10 +11,15 @@ protocol = PI30             # PI30 for most Axpert clones; try PI18 if PI30 fail
 poll_interval = 10          # seconds between reads
 
 [jkbms]
+brand = JKBMS               # battery/BMS adapter — see devices/batteries/ for supported brands
 port = /dev/ttyUSB0
 baud = 115200
 poll_interval = 10          # seconds between reads
 cell_count = 16             # adjust to your actual cell count
+frame_ids = 0x00,0x05       # one RS485 address per physical pack; add more to add packs
+                             # e.g. 0x00,0x05,0x0a for a 3rd pack. Leave blank for the
+                             # original 2-pack default (0x00,0x05).
+pack_capacity_ah = 100      # Ah rating per pack, used only for dashboard/HA labels
 
 [dashboard]
 username = admin

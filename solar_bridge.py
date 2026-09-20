@@ -4,10 +4,12 @@ Solar Bridge — Flin Fution (Voltronic/Axpert) + JKBMS → MQTT → Home Assist
 Sensors: all Solar Assistant equivalents  |  Controls: inverter settings via HA
 """
 
-import configparser, json, logging, os, select, serial, struct, threading, time
+import configparser, json, logging, os, threading, time
 from pathlib import Path
 from datetime import date
 import paho.mqtt.client as mqtt
+
+from devices import get_inverter_class, get_battery_class
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -223,287 +225,24 @@ def pub(client, topic, value):
                    retain=True)
 
 # ---------------------------------------------------------------------------
-# Voltronic / Axpert inverter
+# Inverter adapter classes now live under devices/inverters/ (selected via
+# get_inverter_class() using config.ini's [inverter] protocol).
 # ---------------------------------------------------------------------------
-
-class VoltronicInverter:
-    QPIGS_FIELDS = [
-        # (key, unit, device_class, state_class)
-        ("grid_voltage",             "V",   "voltage",        "measurement"),
-        ("grid_frequency",           "Hz",  "frequency",      "measurement"),
-        ("ac_out_voltage",           "V",   "voltage",        "measurement"),
-        ("ac_out_frequency",         "Hz",  "frequency",      "measurement"),
-        ("ac_out_apparent_power",    "VA",  "apparent_power", "measurement"),
-        ("ac_out_active_power",      "W",   "power",          "measurement"),
-        ("load_percent",             "%",   None,             "measurement"),
-        ("bus_voltage",              "V",   "voltage",        "measurement"),
-        ("battery_voltage",          "V",   "voltage",        "measurement"),
-        ("battery_charge_current",   "A",   "current",        "measurement"),
-        ("battery_capacity",         "%",   "battery",        "measurement"),
-        ("inverter_heatsink_temp",   "°C",  "temperature",    "measurement"),
-        ("pv_input_current",         "A",   "current",        "measurement"),
-        ("pv_input_voltage",         "V",   "voltage",        "measurement"),
-        ("battery_scc_voltage",      "V",   "voltage",        "measurement"),
-        ("battery_discharge_current","A",   "current",        "measurement"),
-    ]
-
-    # Computed / derived sensors published alongside QPIGS
-    DERIVED = [
-        ("pv_power",         "W",   "power",   "measurement"),
-        ("battery_power",    "W",   "power",   "measurement"),
-        ("grid_power",       "W",   "power",   "measurement"),
-        ("battery_current",  "A",   "current", "measurement"),
-    ]
-
-    # QPIRI field positions — confirmed by command testing 2026-06-07
-    # 0=220.0 | 1=22.7 | 2=220.0 | 3=50.0 | 4=22.7 | 5=5000 | 6=5000
-    # 7=48.0  | 8=46.0 | 9=48.0  | 10=55.1| 11=54.0| 12=2   | 13=20
-    # 14=080  | 15=0   | 16=0→1  | 17=0→3 | 18=1   | 19=01  | 20=0
-    # 21=0    | 22=46.0| 23=0    | 24=1
-    # [15]=input voltage range (always 0, NOT a priority field)
-    # [16]=output_source_priority  ← POP01 changed this 0→1 (Solar first) ✓
-    # [17]=charger_source_priority ← PCP03 changed this 1→3 (Solar only)  ✓
-    QPIRI_FIELDS = [
-        (7,  "battery_cutoff_voltage",      "V"),   # shutdown / under-voltage
-        (8,  "battery_back_voltage",        "V"),   # back-to-discharge
-        (10, "battery_bulk_voltage",        "V"),   # absorption / bulk charge
-        (11, "battery_float_voltage",       "V"),   # float charge
-        (13, "max_ac_charge_current",       "A"),   # max grid charge current = 20
-        (14, "max_charge_current",          "A"),   # max total charge current = 80
-        (16, "output_source_priority",      None),  # 0=Grid,1=Solar,2=SBU  (was [15], fixed)
-        (17, "charger_source_priority",     None),  # 0=Grid,1=Solar,2=Sol+Grid,3=SolOnly (was [16], fixed)
-        (22, "battery_redischarge_voltage", "V"),   # redischarge voltage
-    ]
-
-    SET_COMMANDS = {
-        # key → (prefix, value_transformer)
-        # Confirmed working on Flin Fution (Voltronic clone) 2026-06-07:
-        "output_priority":   ("POP",   lambda v: {"Grid first":"00","Solar first":"01","SBU":"02"}.get(v,"")),
-        "charger_priority":  ("PCP",   lambda v: {"Grid first":"00","Solar first":"01","Solar+Grid":"02","Solar only":"03"}.get(v,"")),
-        "max_charge_current":      ("MUCHGC", lambda v: f"{int(float(v)):03d}"),  # MUCHGC confirmed
-        "max_grid_charge_current": ("MUCHGC", lambda v: f"{int(float(v)):03d}"),  # same prefix confirmed
-        "battery_float_voltage":   ("PBFT",   lambda v: f"{float(v):.1f}"),
-        "battery_bulk_voltage":    ("PCVV",   lambda v: f"{float(v):.1f}"),  # PCVV not PBCV
-        "battery_shutdown_voltage":("PSDV",   lambda v: f"{float(v):.1f}"),
-        "battery_recharge_voltage":("PBDV",   lambda v: f"{float(v):.1f}"),
-    }
-
-    def __init__(self, port, protocol="PI30"):
-        self.port = port
-        self.protocol = protocol
-        self._fd = None
-        self._is_hid = "hidraw" in port
-        self._ser = None
-
-    # ── CRC (confirmed correct for this inverter) ───────────────────────────
-    @staticmethod
-    def _crc(data: bytes) -> bytes:
-        crc = 0
-        crc_ta = [0x0000,0x1021,0x2042,0x3063,0x4084,0x50a5,0x60c6,0x70e7,
-                  0x8108,0x9129,0xa14a,0xb16b,0xc18c,0xd1ad,0xe1ce,0xf1ef]
-        for d in data:
-            da = ((crc >> 8) & 0xFF) >> 4
-            crc = (crc << 4) & 0xFFFF; crc ^= crc_ta[da ^ (d >> 4)]
-            da = ((crc >> 8) & 0xFF) >> 4
-            crc = (crc << 4) & 0xFFFF; crc ^= crc_ta[da ^ (d & 0x0F)]
-        bhi = (crc >> 8) & 0xFF; blo = crc & 0xFF
-        if bhi in (0x28,0x0D,0x0A): bhi += 1
-        if blo in (0x28,0x0D,0x0A): blo += 1
-        return bytes([bhi, blo])
-
-    def _frame(self, cmd: str) -> bytes:
-        raw = cmd.encode()
-        return raw + self._crc(raw) + b"\r"
-
-    # ── HID read/write ──────────────────────────────────────────────────────
-    def _hid_query(self, frame: bytes) -> str:
-        for i in range(0, len(frame), 8):
-            chunk = frame[i:i+8]
-            os.write(self._fd, b"\x00" + chunk.ljust(8, b"\x00"))
-            time.sleep(0.02)
-        response = b""
-        deadline = time.time() + 3.0
-        while time.time() < deadline:
-            r, _, _ = select.select([self._fd], [], [], 0.4)
-            if not r:
-                if response: break
-                continue
-            pkt = os.read(self._fd, 8)
-            if not pkt: break
-            response += pkt
-            if b"\r" in response: break
-        if b"\r" in response:
-            response = response[:response.index(b"\r")]
-        return response.rstrip(b"\x00").decode("ascii", errors="ignore").strip()
-
-    def _serial_query(self, frame: bytes) -> str:
-        self._ser.write(frame)
-        response = b""
-        while True:
-            chunk = self._ser.read(256)
-            response += chunk
-            if response.endswith(b"\r") or not chunk: break
-        return response.decode("ascii", errors="ignore").strip()
-
-    def _query(self, cmd: str) -> str:
-        frame = self._frame(cmd)
-        if self._is_hid:
-            return self._hid_query(frame)
-        return self._serial_query(frame)
-
-    # ── Open / close ────────────────────────────────────────────────────────
-    def open(self):
-        try:
-            if self._is_hid:
-                self._fd = os.open(self.port, os.O_RDWR)
-            else:
-                self._ser = serial.Serial(self.port, baudrate=2400, bytesize=8,
-                                          parity="N", stopbits=1, timeout=3)
-            log.info("Inverter opened on %s", self.port)
-            return True
-        except Exception as e:
-            log.error("Inverter open failed: %s", e)
-            return False
-
-    def close(self):
-        try:
-            if self._is_hid and self._fd is not None:
-                os.close(self._fd); self._fd = None
-            elif self._ser:
-                self._ser.close()
-        except Exception: pass
-
-    # ── Queries ─────────────────────────────────────────────────────────────
-    def query_qpigs(self) -> dict | None:
-        with _cmd_lock:
-            raw = self._query("QPIGS")
-        if not raw.startswith("(") or raw.startswith("(NAK"):
-            log.warning("QPIGS bad response: %r", raw[:30])
-            return self._reconnect_and_retry("QPIGS")
-        parts = raw[1:].split()
-        if len(parts) < 16:
-            log.warning("QPIGS short: %d fields", len(parts))
-            return None
-        result = {}
-        for i, (key, *_) in enumerate(self.QPIGS_FIELDS):
-            try:   result[key] = float(parts[i])
-            except: result[key] = None
-        # Status flags (position 16)
-        result["status_flags"] = parts[16] if len(parts) > 16 else ""
-        return result
-
-    def query_qpiri(self) -> dict | None:
-        with _cmd_lock:
-            raw = self._query("QPIRI")
-        if not raw.startswith("(") or raw.startswith("(NAK"):
-            return None
-        parts = raw[1:].split()
-        log.info("QPIRI raw fields: %s",
-                 " | ".join(f"{i}={v}" for i, v in enumerate(parts)))
-        result = {}
-        for pos, key, _ in self.QPIRI_FIELDS:
-            try:   result[key] = float(parts[pos]) if pos < len(parts) and "." in parts[pos] else int(parts[pos])
-            except: pass
-        return result if result else None
-
-    def query_qmod(self) -> str | None:
-        with _cmd_lock:
-            raw = self._query("QMOD")
-        if not raw.startswith("(") or raw.startswith("(NAK"):
-            return None
-        code = raw[1:2]
-        return {"P":"Power on","S":"Standby","L":"Line/Grid",
-                "B":"Battery","F":"Fault","H":"Power saving",
-                "D":"Shutdown"}.get(code, f"Unknown({code})")
-
-    def query_serial(self) -> str | None:
-        with _cmd_lock:
-            raw = self._query("QID")
-        if raw.startswith("(") and not raw.startswith("(NAK"):
-            return raw[1:].strip()
-        return None
-
-    # QPIWS warning/fault bit map (Axpert/Voltronic PI30).
-    # (bit_index, label, is_fault)  — bit 0 is the leftmost character.
-    QPIWS_BITS = [
-        (1,  "Inverter fault",            True),
-        (2,  "Bus over",                  True),
-        (3,  "Bus under",                 True),
-        (4,  "Bus soft fail",             True),
-        (5,  "Line fail",                 False),
-        (6,  "OPV short",                 True),
-        (7,  "Inverter voltage too low",  True),
-        (8,  "Inverter voltage too high", True),
-        (9,  "Over temperature",          False),
-        (10, "Fan locked",                False),
-        (11, "Battery voltage high",      False),
-        (12, "Battery low alarm",         False),
-        (14, "Battery under shutdown",    False),
-        (16, "Overload",                  False),
-        (17, "EEPROM fault",              False),
-        (18, "Inverter over current",     True),
-        (19, "Inverter soft fail",        True),
-        (20, "Self test fail",            True),
-        (21, "OP DC voltage over",        True),
-        (22, "Battery open",              True),
-        (23, "Current sensor fail",       True),
-        (24, "Battery short",             True),
-        (25, "Power limit",               False),
-        (26, "PV voltage high",           False),
-        (27, "MPPT overload fault",       True),
-        (28, "MPPT overload warning",     False),
-        (29, "Battery too low to charge", False),
-    ]
-
-    def query_qpiws(self) -> dict | None:
-        """Query warning/fault status. Returns {'text','is_fault','raw'} or None."""
-        with _cmd_lock:
-            raw = self._query("QPIWS")
-        if not raw.startswith("(") or raw.startswith("(NAK"):
-            return None
-        bits = raw[1:].strip()
-        active, faulty = [], False
-        for idx, label, is_fault in self.QPIWS_BITS:
-            if idx < len(bits) and bits[idx] == "1":
-                active.append(label)
-                faulty = faulty or is_fault
-        return {"text": ", ".join(active) if active else "OK",
-                "is_fault": faulty, "raw": bits}
-
-    def send_command(self, cmd: str) -> bool:
-        """Send a set command to the inverter, return True if ACK."""
-        with _cmd_lock:
-            raw = self._query(cmd)
-        ok = "ACK" in raw
-        log.info("CMD %s -> %s", cmd, "ACK" if ok else f"FAIL({raw[:20]})")
-        return ok
-
-    def _reconnect_and_retry(self, cmd: str) -> dict | None:
-        """Try reopening the device and querying again."""
-        self.close()
-        for candidate in [self.port, "/dev/hidraw0", "/dev/hidraw1", "/dev/ttyUSB0"]:
-            if os.path.exists(candidate):
-                self.port = candidate
-                if self.open():
-                    log.info("Inverter reconnected on %s", candidate)
-                    break
-        return None
-
 
 # ── HA discovery for inverter ────────────────────────────────────────────────
 
-def register_inverter_sensors(client):
+def register_inverter_sensors(client, inverter_cls):
     dev = {"identifiers": ["flin_fution"],
            "name": "Flin Fution Inverter",
            "model": "Flin Fution (Voltronic/Axpert)",
            "manufacturer": "Flin Energy"}
 
-    for key, unit, dc, sc in VoltronicInverter.QPIGS_FIELDS:
+    for key, unit, dc, sc in inverter_cls.QPIGS_FIELDS:
         label = key.replace("_", " ").title()
         ha_disc(client, f"inv_{key}", label, f"solar/inverter/{key}",
                 unit=unit, device_class=dc, state_class=sc, device_info=dev)
 
-    for key, unit, dc, sc in VoltronicInverter.DERIVED:
+    for key, unit, dc, sc in inverter_cls.DERIVED:
         label = key.replace("_", " ").title()
         ha_disc(client, f"inv_{key}", label, f"solar/inverter/{key}",
                 unit=unit, device_class=dc, state_class=sc, device_info=dev)
@@ -569,196 +308,15 @@ def register_inverter_sensors(client):
                 })
 
     log.info("Inverter HA discovery published (%d sensors + controls)",
-             len(VoltronicInverter.QPIGS_FIELDS) + len(VoltronicInverter.DERIVED) + 14)
+             len(inverter_cls.QPIGS_FIELDS) + len(inverter_cls.DERIVED) + 14)
 
 
 # ---------------------------------------------------------------------------
-# JKBMS — dual-unit support (55 AA EB 90 new protocol, passive broadcast)
-# Both BMS units on same RS485 bus, identified by byte 5 of each frame:
-#   BMS 1 → frame ID 0x00  (RS485 address 1)
-#   BMS 2 → frame ID 0x05  (RS485 address 2, confirmed from live capture)
+# BMS adapter classes now live under devices/batteries/ (selected via
+# get_battery_class() using config.ini's [jkbms] brand). The frame-ID -> pack
+# mapping is built in main() from [jkbms] frame_ids, so the number of packs
+# is a config setting, not something hard-coded here.
 # ---------------------------------------------------------------------------
-
-BMS_FRAME_IDS = {0x00: "bms1", 0x05: "bms2"}   # frame_id_byte → topic prefix
-
-class JKBMS:
-    NEW_HEADER = b"\x55\xaa\xeb\x90"
-
-    def __init__(self, port, baud=115200, cell_count=16):
-        self.port = port; self.baud = baud; self.cell_count = cell_count
-        self._ser = None
-
-    def open(self):
-        try:
-            self._ser = serial.Serial(self.port, baudrate=self.baud, bytesize=8,
-                                      parity="N", stopbits=1, timeout=2)
-            self._ser.reset_input_buffer()
-            time.sleep(1.5)
-            probe = self._ser.read(128)
-            count = probe.count(self.NEW_HEADER)
-            log.info("JKBMS opened on %s @ %d (%d header(s) in probe)",
-                     self.port, self.baud, count)
-            return True
-        except Exception as e:
-            log.error("JKBMS open failed: %s", e)
-            return False
-
-    def read_all(self) -> dict:
-        """
-        Read one broadcast cycle (~1s) and return parsed data for every BMS found.
-        Returns: {frame_id_byte: parsed_dict, ...}
-        e.g. {0x00: {...bms1 data...}, 0x05: {...bms2 data...}}
-        """
-        try:
-            self._ser.reset_input_buffer()
-            raw = b""
-            deadline = time.time() + 4.0
-            self._ser.timeout = 0.2
-
-            # Read until we have at least one type-02 frame from every known BMS,
-            # or until the time window expires
-            while time.time() < deadline:
-                chunk = self._ser.read(256)
-                if chunk:
-                    raw += chunk
-                    # Check if we have a type-02 frame for each known BMS ID
-                    found_ids = set()
-                    pos = 0
-                    while True:
-                        idx = raw.find(self.NEW_HEADER, pos)
-                        if idx == -1: break
-                        if idx + 5 < len(raw) and raw[idx + 4] == 0x02:
-                            found_ids.add(raw[idx + 5])
-                        pos = idx + 1
-                    # Stop early once we have a 200-byte region after each known BMS frame
-                    if found_ids >= set(BMS_FRAME_IDS.keys()):
-                        ok = True
-                        for fid in BMS_FRAME_IDS:
-                            needle = self.NEW_HEADER + b"\x02" + bytes([fid])
-                            idx2 = raw.rfind(needle)
-                            if idx2 == -1 or len(raw) - idx2 < 200:
-                                ok = False; break
-                        if ok:
-                            break
-
-            return self._parse_all_frames(raw)
-
-        except Exception as e:
-            log.error("JKBMS read error: %s", e)
-            return {}
-
-    def _parse_all_frames(self, raw: bytes) -> dict:
-        """Find all type-02 frames in the buffer and parse each one."""
-        results = {}
-        pos = 0
-        while True:
-            idx = raw.find(self.NEW_HEADER + b"\x02", pos)
-            if idx == -1:
-                break
-            pos = idx + 1
-            frame = raw[idx:]
-            if len(frame) < 40:
-                continue
-            frame_id = frame[5]
-            # Only parse the FIRST occurrence of each frame ID
-            if frame_id in results:
-                continue
-            parsed = self._parse_cell_frame(frame)
-            if parsed:
-                parsed["frame_id"] = frame_id
-                results[frame_id] = parsed
-
-        if not results:
-            log.warning("JKBMS: no type-02 frames found in %d bytes", len(raw))
-        else:
-            log.debug("JKBMS: parsed frames for IDs: %s",
-                      [f"0x{k:02x}" for k in sorted(results)])
-        return results
-
-    def _parse_cell_frame(self, frame: bytes) -> dict:
-        """
-        JK BMS new-protocol type-02 (cell info) frame.
-        Confirmed byte offsets (from live dual-BMS passive capture, 2026-06-07):
-          +5   : device frame ID (0x00=BMS1, 0x05=BMS2)
-          +6   : 16 × uint16 LE  cell voltages (mV)
-          +144 : uint16 LE  MOS temperature (0.1°C)
-          +150 : uint32 LE  pack voltage (mV)
-          +162 : uint16 LE  temperature 1 (0.1°C)
-          +164 : uint16 LE  temperature 2 (0.1°C)
-          +173 : uint8      SOC %                       ← (was wrongly read at +182)
-          +174 : uint32 LE  remaining capacity (mAh)    ← (was wrongly read at +154)
-          +178 : uint32 LE  nominal/design capacity (mAh) ← (was wrongly read at +186)
-          +182 : uint32 LE  cycle count                 ← (was wrongly read at +190)
-          +190 : uint8      state of health %           ← (was wrongly reported as cycles)
-        """
-        data = {}
-        def u8(off):  return frame[off] if off < len(frame) else None
-        def u16(off): return struct.unpack_from("<H", frame, off)[0] if off+2<=len(frame) else None
-        def u32(off): return struct.unpack_from("<I", frame, off)[0] if off+4<=len(frame) else None
-        def s32(off): return struct.unpack_from("<i", frame, off)[0] if off+4<=len(frame) else None
-
-        # Cell voltages
-        cells = []
-        for i in range(self.cell_count):
-            mv = u16(6 + i*2)
-            if mv and 2000 < mv < 5000:
-                cells.append(round(mv / 1000, 3))
-        if cells:
-            data["cell_voltages"]     = cells
-            data["cell_voltage_min"]  = min(cells)
-            data["cell_voltage_max"]  = max(cells)
-            data["cell_voltage_diff"] = round(max(cells) - min(cells), 3)
-            data["cell_voltage_avg"]  = round(sum(cells) / len(cells), 3)
-
-        v = u32(150)
-        if v and 10_000 < v < 120_000:
-            data["battery_voltage"] = round(v / 1000, 2)
-
-        # Per-pack current: int32 LE @ +158, milliamps, signed (+charge / -discharge).
-        # Confirmed by cross-referencing the inverter's total: BMS1+BMS2 sum ≈ inverter.
-        cur = s32(158)
-        if cur is not None and abs(cur) < 600_000:        # < 600 A sanity
-            amps = round(cur / 1000, 2)
-            data["battery_current"] = amps
-            if "battery_voltage" in data:
-                data["battery_power"] = round(data["battery_voltage"] * amps, 1)
-
-        rc = u32(174)
-        if rc and rc < 1_000_000:
-            data["remaining_capacity_ah"] = round(rc / 1000, 1)
-
-        t1 = u16(162)
-        if t1 and 200 < t1 < 800:
-            data["temp_battery_1"] = round(t1 / 10, 1)
-        t2 = u16(164)
-        if t2 and 200 < t2 < 800:
-            data["temp_battery_2"] = round(t2 / 10, 1)
-
-        mos = u16(144)
-        if mos and 200 < mos < 800:
-            data["temp_mos"] = round(mos / 10, 1)
-
-        soc = u8(173)
-        if soc is not None and 0 <= soc <= 100:
-            data["battery_soc"] = soc
-
-        dc_val = u32(178)
-        if dc_val and 1000 < dc_val < 2_000_000:
-            data["design_capacity_ah"] = round(dc_val / 1000, 1)
-
-        cyc = u32(182)
-        if cyc is not None and cyc < 100_000:
-            data["battery_cycles"] = cyc
-
-        soh = u8(190)
-        if soh is not None and 0 < soh <= 100:
-            data["state_of_health"] = soh
-
-        return data
-
-    def close(self):
-        if self._ser: self._ser.close()
-
 
 BMS_SENSORS = [
     ("battery_voltage",       "Battery Voltage",     "V",   "voltage",     "measurement"),
@@ -794,13 +352,13 @@ COMBINED_SENSORS = [
 ]
 
 
-def register_bms_sensors(client):
-    # Per-unit devices (BMS 1 and BMS 2)
-    for frame_id, prefix in BMS_FRAME_IDS.items():
-        n = prefix[-1]   # "1" or "2"
+def register_bms_sensors(client, frame_ids: dict, pack_capacity_ah=100):
+    # Per-unit devices — one per configured pack (was hard-coded to exactly two)
+    for frame_id, prefix in frame_ids.items():
+        n = prefix[len("bms"):]   # "1", "2", "3", ... (supports >2 packs)
         dev = {
             "identifiers": [f"jk_{prefix}"],
-            "name":         f"JK BMS {n} (100Ah)",
+            "name":         f"JK BMS {n} ({pack_capacity_ah}Ah)",
             "model":        "JK-B Series",
             "manufacturer": "Jikong",
         }
@@ -814,11 +372,12 @@ def register_bms_sensors(client):
                     unit="V", device_class="voltage", state_class="measurement",
                     device_info=dev)
 
-    # Combined "Battery Bank" device (totals + averages from both packs)
+    # Combined "Battery Bank" device (totals + averages across all packs)
+    num_packs = len(frame_ids)
     bank_dev = {
         "identifiers": ["battery_bank"],
-        "name":        "Battery Bank (200Ah)",
-        "model":       "2× JK BMS parallel",
+        "name":        f"Battery Bank ({pack_capacity_ah * num_packs}Ah)",
+        "model":       f"{num_packs}× JK BMS parallel",
         "manufacturer":"Jikong",
     }
     for key, label, unit, dc, sc in COMBINED_SENSORS:
@@ -832,7 +391,7 @@ def register_bms_sensors(client):
 # MQTT control message handler
 # ---------------------------------------------------------------------------
 
-def apply_control(inverter: VoltronicInverter, mqtt_client, ctrl_key: str, payload: str) -> bool:
+def apply_control(inverter, mqtt_client, ctrl_key: str, payload: str) -> bool:
     """Translate a control key/value into an inverter command and send it.
     Shared by the MQTT handler and the automation engine."""
     if ctrl_key not in inverter.SET_COMMANDS:
@@ -852,7 +411,7 @@ def apply_control(inverter: VoltronicInverter, mqtt_client, ctrl_key: str, paylo
     return ok
 
 
-def make_on_message(inverter: VoltronicInverter, mqtt_client):
+def make_on_message(inverter, mqtt_client):
     def on_message(client, userdata, msg):
         topic = msg.topic
         payload = msg.payload.decode(errors="ignore").strip()
@@ -871,20 +430,45 @@ def make_on_message(inverter: VoltronicInverter, mqtt_client):
 # Main loop
 # ---------------------------------------------------------------------------
 
+def parse_frame_ids(raw: str, default=(0x00, 0x05)) -> list[int]:
+    """Parse config.ini's [jkbms] frame_ids ("0x00,0x05" or "0,5") into ints.
+    One entry per physical pack on the RS485 bus — adding a pack is adding
+    an entry here, not editing code."""
+    raw = (raw or "").strip()
+    if not raw:
+        return list(default)
+    ids = []
+    for part in raw.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        ids.append(int(part, 0))   # base=0 autodetects 0x.. / decimal
+    return ids or list(default)
+
+
 def main():
     cfg = load_config()
 
     inv_port     = cfg_str(cfg, "inverter", "port",          "/dev/hidraw0")
     inv_proto    = cfg_str(cfg, "inverter", "protocol",      "PI30")
     inv_interval = cfg_int(cfg, "inverter", "poll_interval", 10)
+    bms_brand    = cfg_str(cfg, "jkbms",   "brand",         "JKBMS")
     bms_port     = cfg_str(cfg, "jkbms",   "port",          "/dev/ttyUSB0")
     bms_baud     = cfg_int(cfg, "jkbms",   "baud",          115200)
     bms_cells    = cfg_int(cfg, "jkbms",   "cell_count",    16)
     bms_interval = cfg_int(cfg, "jkbms",   "poll_interval", 10)
+    bms_frame_ids     = parse_frame_ids(cfg_str(cfg, "jkbms", "frame_ids", ""))
+    bms_capacity_ah   = cfg_int(cfg, "jkbms", "pack_capacity_ah", 100)
     history_days = cfg_int(cfg, "history", "retain_days", 90)   # DB retention (nightly purge)
 
+    # frame_id (RS485 address byte) -> topic prefix, e.g. {0x00:"bms1", 0x05:"bms2", 0x0a:"bms3"}
+    BMS_FRAME_IDS = {fid: f"bms{i+1}" for i, fid in enumerate(bms_frame_ids)}
+
+    InverterCls = get_inverter_class(inv_proto)
+    BatteryCls  = get_battery_class(bms_brand)
+
     energy = EnergyTracker()
-    inverter = VoltronicInverter(inv_port, inv_proto)
+    inverter = InverterCls(inv_port, inv_proto)
 
     # MQTT must be set up before on_message so the closure captures the client
     # We create a placeholder and fill it in after connect
@@ -897,8 +481,8 @@ def main():
     # Publish HA discovery whenever (re)connected — runs inside on_connect so it
     # works with connect_async and self-heals after a broker restart.
     def on_conn(cl):
-        register_inverter_sensors(cl)
-        register_bms_sensors(cl)
+        register_inverter_sensors(cl, InverterCls)
+        register_bms_sensors(cl, BMS_FRAME_IDS, bms_capacity_ah)
 
     client = mqtt_connect(cfg, on_msg, on_connect_cb=on_conn)
     client_holder[0] = client
@@ -918,7 +502,7 @@ def main():
     if automation:
         log.info("Automation engine loaded (%d rules)", len(automation.rules))
 
-    bms = JKBMS(bms_port, bms_baud, bms_cells)
+    bms = BatteryCls(bms_port, bms_baud, bms_cells, expected_frame_ids=bms_frame_ids)
     inv_ok = inverter.open()
     bms_ok = bms.open()
 
@@ -953,7 +537,7 @@ def main():
             if inv_ok and now - last_inv >= inv_interval:
                 d = inverter.query_qpigs()
                 if d:
-                    for key, *_ in VoltronicInverter.QPIGS_FIELDS:
+                    for key, *_ in InverterCls.QPIGS_FIELDS:
                         pub(client, f"solar/inverter/{key}", d.get(key))
 
                     # Derived values
@@ -1005,7 +589,7 @@ def main():
                     pub(client, "solar/inverter/battery_discharge_today",energy.today("batt_out_kwh"))
 
                     # Mirror into flat state for alerts/automation/Telegram
-                    for key, *_ in VoltronicInverter.QPIGS_FIELDS:
+                    for key, *_ in InverterCls.QPIGS_FIELDS:
                         if d.get(key) is not None:
                             latest_state[f"inverter_{key}"] = d[key]
                     latest_state.update({
@@ -1039,7 +623,7 @@ def main():
             if inv_ok and now - last_qpiri >= 60:
                 s = inverter.query_qpiri()
                 if s:
-                    for _, key, _ in VoltronicInverter.QPIRI_FIELDS:
+                    for _, key, _ in InverterCls.QPIRI_FIELDS:
                         if key in s:
                             pub(client, f"solar/inverter/{key}", s[key])
                             latest_state[f"inverter_{key}"] = s[key]
