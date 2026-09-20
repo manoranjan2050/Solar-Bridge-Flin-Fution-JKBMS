@@ -1325,8 +1325,8 @@ aside#sidebar{display:flex;flex-direction:column}
       <b style="color:var(--text1)">Install the app, then scan this code — that's it.</b>
       No typing a server address or a 40-character token on a phone keyboard.
     </p>
-    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
-      <div style="text-align:center">
+    <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;max-width:640px">
+      <div style="text-align:center;flex:0 0 auto">
         <div id="pair-qr" style="width:180px;height:180px;background:#fff;border-radius:12px;padding:10px;display:flex;align-items:center;justify-content:center">
           <span style="color:#888;font-size:.8rem">Loading...</span>
         </div>
@@ -1334,7 +1334,7 @@ aside#sidebar{display:flex;flex-direction:column}
           Open the app → <b>Scan QR to Pair</b>
         </div>
       </div>
-      <div style="flex:1;min-width:220px">
+      <div style="flex:1 1 260px;min-width:220px;max-width:340px;padding-top:2px">
         <details>
           <summary style="cursor:pointer;font-size:.82rem;color:var(--text2)">
             Can't scan? Enter these manually instead</summary>
@@ -1353,7 +1353,7 @@ aside#sidebar{display:flex;flex-direction:column}
             </div>
           </div>
         </details>
-        <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;align-items:flex-start">
           <button class="btn btn-danger btn-sm" onclick="regenerateApiToken()">
             <i class="fa fa-rotate"></i> Regenerate Token</button>
           <span style="font-size:.8rem;color:var(--text3)">Regenerating signs out every app using the old token immediately — re-scan after.</span>
