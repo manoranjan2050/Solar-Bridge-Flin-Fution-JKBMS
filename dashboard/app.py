@@ -47,6 +47,44 @@ def _session_secret():
         import secrets
         return secrets.token_hex(32)   # last resort: random per-process
 
+def _api_token():
+    """A per-install random Bearer token for the mobile app / external API
+    clients — separate from the session cookie so a phone app doesn't need
+    to hold a browser session. Never hardcoded (this repo is public)."""
+    token_file = BASE.parent / ".api_token"
+    try:
+        if token_file.exists():
+            t = token_file.read_text().strip()
+            if len(t) >= 32:
+                return t
+        import secrets
+        t = secrets.token_urlsafe(32)
+        token_file.write_text(t)
+        try: os.chmod(token_file, 0o600)
+        except Exception: pass
+        return t
+    except Exception:
+        import secrets
+        return secrets.token_urlsafe(32)   # last resort: random per-process
+
+
+def _regenerate_api_token():
+    import secrets
+    t = secrets.token_urlsafe(32)
+    token_file = BASE.parent / ".api_token"
+    token_file.write_text(t)
+    try: os.chmod(token_file, 0o600)
+    except Exception: pass
+    return t
+
+
+def _bearer_token_from_request():
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        return auth[len("Bearer "):].strip()
+    return request.headers.get("X-API-Token", "").strip()
+
+
 app       = Flask(__name__)
 app.config["SECRET_KEY"] = _session_secret()
 app.config["PERMANENT_SESSION_LIFETIME"] = 60 * 60 * 24 * 30   # stay logged in 30 days
@@ -68,7 +106,13 @@ def viewer_creds():
             cfg.get("dashboard", "viewer_password", fallback="").split("#")[0].strip())
 
 def current_role():
-    """'admin' | 'viewer' | None. If no admin password is set, everyone is admin."""
+    """'admin' | 'viewer' | None. If no admin password is set, everyone is admin.
+    A valid API Bearer token (mobile app / external client) counts as admin —
+    it's the owner's own device, issued from the System page, not a public
+    credential."""
+    token = _bearer_token_from_request()
+    if token and _eq(token, _api_token()):
+        return "admin"
     _, pwd = auth_creds()
     if not pwd:
         return "admin"               # login disabled → full access (back-compat)
@@ -105,6 +149,22 @@ def api_whoami():
     role = current_role()
     _, vpwd = viewer_creds()
     return jsonify({"role": role or "guest", "viewer_enabled": bool(vpwd)})
+
+
+@app.route("/api/token")
+@admin_required
+def api_token_show():
+    """The mobile app / external API Bearer token — paste this into the app's
+    settings screen (visible from the dashboard's System page)."""
+    return jsonify({"token": _api_token()})
+
+
+@app.route("/api/token/regenerate", methods=["POST"])
+@admin_required
+def api_token_regenerate():
+    """Invalidate the current token (e.g. after uninstalling a phone) and
+    issue a new one. Every app using the old token stops working immediately."""
+    return jsonify({"token": _regenerate_api_token()})
 
 import hmac as _hmac
 def _eq(a, b):

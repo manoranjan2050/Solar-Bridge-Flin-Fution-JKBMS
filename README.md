@@ -208,6 +208,24 @@ guide — all from the dashboard's Network page. Guides: **[CLOUDFLARE_TUNNEL.md
 
 ---
 
+## 📱 Mobile App / API
+
+Every `/api/*` route accepts a per-install **Bearer token** as an alternative to the browser session
+cookie, so a native mobile app can talk to the same backend a phone's browser would use — no separate
+API to maintain.
+
+```
+GET  /api/token              → { "token": "..." }   (session-authenticated; System page)
+POST /api/token/regenerate   → { "token": "..." }   (invalidates the old token immediately)
+```
+
+Paste the token into the app as `Authorization: Bearer <token>` (or `X-API-Token: <token>`). Combined
+with a **Cloudflare Tunnel** custom domain, this is the intended path for a companion app: the app talks
+to `https://solar.yourdomain.com/api/...` with the token, the same way the web dashboard talks to it
+with a session cookie. A Flutter companion app is planned — see [TODO.md](TODO.md).
+
+---
+
 ## 📖 Documentation
 
 | Guide | What's inside |

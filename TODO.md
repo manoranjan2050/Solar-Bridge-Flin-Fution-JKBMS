@@ -46,6 +46,26 @@ their phone — exactly like Solar Assistant OS. **Chosen approach: pi-gen / Cus
 
 ---
 
+## 📱 NEXT UP: Flutter companion app + multi-brand device support
+
+- [x] **Device-adapter refactor** — inverter/BMS classes moved to `devices/inverters/`
+      and `devices/batteries/` behind a registry (`devices/registry.py`), so a new
+      brand is a new adapter file, not a `solar_bridge.py` edit.
+- [x] **Configurable battery pack count** — `[jkbms] frame_ids` in config.ini lists
+      one RS485 address per pack (was hard-coded to exactly two).
+- [x] **API Bearer token** (`/api/token`, `/api/token/regenerate`) — lets a mobile
+      app authenticate over the existing Cloudflare Tunnel without a browser session.
+- [ ] **Additional inverter/BMS adapters** — Growatt/Deye/Victron, Daly/JBD/Seplos.
+      Needs a manufacturer datasheet or a live capture per brand — do not guess
+      register maps (same rule as the original PI30/JK BMS work).
+- [ ] **Dashboard device-picker UI** — Settings page dropdown to choose inverter/BMS
+      brand + ports, instead of hand-editing config.ini (depends on the adapters above).
+- [ ] **Flutter companion app** — read-only + control screens mirroring the web
+      dashboard, using the new Bearer token against the existing `/api/*` routes.
+      Ship it as its own repo/module once the API surface above is stable.
+
+---
+
 ## 🔧 Feature ideas (not started) — ranked by value
 
 ### High value
