@@ -1402,6 +1402,47 @@ aside#sidebar{display:flex;flex-direction:column}
         </div>
       </div>
     </div>
+    <hr style="border-color:var(--border);margin:18px 0">
+    <div class="card-title" style="font-size:.95rem"><i class="fa fa-eye"></i> Demo / Viewer Access</div>
+    <p style="font-size:.85rem;color:var(--text2);line-height:1.6;margin-bottom:14px">
+      A separate, <b style="color:var(--text1)">read-only</b> pairing — for a demo phone, a Play Store
+      reviewer, or anyone who should see live data but never change a setting.
+    </p>
+    <div style="display:flex;gap:28px;flex-wrap:wrap;align-items:flex-start;max-width:640px">
+      <div style="text-align:center;flex:0 0 auto">
+        <div id="pair-qr-viewer" style="width:180px;height:180px;background:#fff;border-radius:12px;padding:10px;display:flex;align-items:center;justify-content:center">
+          <span style="color:#888;font-size:.8rem">Loading...</span>
+        </div>
+        <div style="font-size:.75rem;color:var(--text3);margin-top:8px;max-width:180px">
+          Open the app → <b>Scan QR to Pair</b>
+        </div>
+      </div>
+      <div style="flex:1 1 260px;min-width:220px;max-width:340px;padding-top:2px">
+        <details>
+          <summary style="cursor:pointer;font-size:.82rem;color:var(--text2)">
+            Can't scan? Enter these manually instead</summary>
+          <div class="form-grid" style="margin-top:10px">
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Dashboard Address</label>
+              <input id="pair-url-val-viewer" readonly value="--">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Viewer API Token</label>
+              <div style="display:flex;gap:8px">
+                <input id="api-token-val-viewer" type="password" readonly value="••••••••••••••••••••••••••••••••">
+                <button class="btn btn-secondary btn-sm" onclick="toggleViewerTokenVisible()"><i class="fa fa-eye" id="api-token-eye-viewer"></i></button>
+                <button class="btn btn-secondary btn-sm" onclick="copyViewerApiToken()"><i class="fa fa-copy"></i> Copy</button>
+              </div>
+            </div>
+          </div>
+        </details>
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px;align-items:flex-start">
+          <button class="btn btn-danger btn-sm" onclick="regenerateViewerApiToken()">
+            <i class="fa fa-rotate"></i> Regenerate Viewer Token</button>
+          <span style="font-size:.8rem;color:var(--text3)">Only affects demo/viewer pairings — the admin token above is untouched.</span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Backup & Restore -->
@@ -1807,7 +1848,7 @@ function showPage(id) {
   document.getElementById('page-'+id).classList.add('active');
   event && event.currentTarget && event.currentTarget.classList.add('active');
   if (id === 'network') { loadConfig(); loadIpInfo(); loadNetOverview(); loadCloudflare(); }
-  if (id === 'system')  { loadSysInfo(); loadApiToken(); }
+  if (id === 'system')  { loadSysInfo(); loadApiToken(); loadViewerToken(); }
   if (id === 'logs')    fetchLogs();
   if (id === 'overview') loadForecast();
   if (id === 'history') loadHistory();
@@ -2965,6 +3006,67 @@ async function regenerateApiToken() {
     document.getElementById('api-token-eye').className = 'fa fa-eye';
     renderPairingQr();
     toast('New token issued — re-scan the QR code on your phone','ok');
+  } catch(e) { toast('Regenerate failed','err'); }
+}
+
+let _viewerApiToken = null;
+async function loadViewerToken() {
+  try {
+    const r = await fetch('/api/token/viewer');
+    if (!r.ok) return;
+    const j = await r.json();
+    _viewerApiToken = j.token;
+    renderViewerPairingQr();
+  } catch(e) { /* not admin, or offline — card just stays masked */ }
+}
+function renderViewerPairingQr() {
+  if (!_viewerApiToken) return;
+  const baseUrl = window.location.origin;
+  const urlField = document.getElementById('pair-url-val-viewer');
+  if (urlField) urlField.value = baseUrl;
+  const box = document.getElementById('pair-qr-viewer');
+  if (!box || typeof qrcode !== 'function') return;
+  try {
+    const payload = JSON.stringify({url: baseUrl, token: _viewerApiToken});
+    const qr = qrcode(0, 'M');
+    qr.addData(payload);
+    qr.make();
+    box.innerHTML = qr.createSvgTag({cellSize: 5, margin: 2});
+  } catch (e) {
+    box.innerHTML = '<span style="color:#888;font-size:.75rem;padding:8px">QR unavailable — use manual entry</span>';
+  }
+}
+function toggleViewerTokenVisible() {
+  const inp = document.getElementById('api-token-val-viewer');
+  const eye = document.getElementById('api-token-eye-viewer');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    inp.value = _viewerApiToken || '(unavailable — reload the page)';
+    eye.className = 'fa fa-eye-slash';
+  } else {
+    inp.type = 'password';
+    inp.value = '••••••••••••••••••••••••••••••••';
+    eye.className = 'fa fa-eye';
+  }
+}
+async function copyViewerApiToken() {
+  if (!_viewerApiToken) { toast('Token not loaded yet','err'); return; }
+  try {
+    await navigator.clipboard.writeText(_viewerApiToken);
+    toast('Viewer token copied to clipboard','ok');
+  } catch(e) { toast('Copy failed — select the field manually','err'); }
+}
+async function regenerateViewerApiToken() {
+  if (!confirm('Regenerate the viewer token? Any demo/reviewer phone using the old one will stop working until re-paired.')) return;
+  try {
+    const r = await fetch('/api/token/viewer/regenerate', {method:'POST'});
+    const j = await r.json();
+    _viewerApiToken = j.token;
+    document.getElementById('api-token-val-viewer').type = 'password';
+    document.getElementById('api-token-val-viewer').value = '••••••••••••••••••••••••••••••••';
+    document.getElementById('api-token-eye-viewer').className = 'fa fa-eye';
+    renderViewerPairingQr();
+    toast('New viewer token issued','ok');
   } catch(e) { toast('Regenerate failed','err'); }
 }
 

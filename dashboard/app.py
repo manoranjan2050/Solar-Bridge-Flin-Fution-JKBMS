@@ -78,6 +78,38 @@ def _regenerate_api_token():
     return t
 
 
+def _viewer_api_token():
+    """A per-install read-only Bearer token — for a demo/reviewer phone that
+    should see live data but never be able to change a setting (e.g. Play
+    Store closed-testing access). Separate file from the admin token so
+    issuing/rotating one never affects the other."""
+    token_file = BASE.parent / ".viewer_api_token"
+    try:
+        if token_file.exists():
+            t = token_file.read_text().strip()
+            if len(t) >= 32:
+                return t
+        import secrets
+        t = secrets.token_urlsafe(32)
+        token_file.write_text(t)
+        try: os.chmod(token_file, 0o600)
+        except Exception: pass
+        return t
+    except Exception:
+        import secrets
+        return secrets.token_urlsafe(32)
+
+
+def _regenerate_viewer_api_token():
+    import secrets
+    t = secrets.token_urlsafe(32)
+    token_file = BASE.parent / ".viewer_api_token"
+    token_file.write_text(t)
+    try: os.chmod(token_file, 0o600)
+    except Exception: pass
+    return t
+
+
 def _bearer_token_from_request():
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
@@ -132,6 +164,8 @@ def current_role():
     token = _bearer_token_from_request()
     if token and _eq(token, _api_token()):
         return "admin"
+    if token and _eq(token, _viewer_api_token()):
+        return "viewer"
     _, pwd = auth_creds()
     if not pwd:
         return "admin"               # login disabled → full access (back-compat)
@@ -184,6 +218,20 @@ def api_token_regenerate():
     """Invalidate the current token (e.g. after uninstalling a phone) and
     issue a new one. Every app using the old token stops working immediately."""
     return jsonify({"token": _regenerate_api_token()})
+
+
+@app.route("/api/token/viewer")
+@admin_required
+def api_viewer_token_show():
+    """Read-only Bearer token — for a demo phone or a Play Store reviewer;
+    /api/control returns 403 for it, same as the viewer web login."""
+    return jsonify({"token": _viewer_api_token()})
+
+
+@app.route("/api/token/viewer/regenerate", methods=["POST"])
+@admin_required
+def api_viewer_token_regenerate():
+    return jsonify({"token": _regenerate_viewer_api_token()})
 
 import hmac as _hmac
 def _eq(a, b):

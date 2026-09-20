@@ -57,3 +57,4 @@ Thumbs.db
 .session_secret
 # Mobile-app / API bearer token (per-install secret)
 .api_token
+.viewer_api_token
