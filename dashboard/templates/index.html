@@ -281,6 +281,35 @@ main{margin-left:var(--sidebar);flex:1;padding:24px;overflow-y:auto}
 /* low battery: red pulse */
 .cell-fill.low{animation:cellLow 1s ease-in-out infinite}
 @keyframes cellLow{0%,100%{box-shadow:0 0 4px var(--load)}50%{box-shadow:0 0 14px var(--load)}}
+/* ── Developer card (System page) ── */
+.dev-card{margin-top:16px;text-align:center;padding:28px 20px;
+  opacity:0;animation:devIn .6s cubic-bezier(.2,.8,.3,1.2) .1s forwards}
+@keyframes devIn{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.dev-avatar{width:64px;height:64px;margin:0 auto 12px;border-radius:50%;display:flex;
+  align-items:center;justify-content:center;font-size:1.6rem;color:#fff;
+  background:linear-gradient(135deg,#ffb347,#ff5e62);
+  box-shadow:0 0 0 0 rgba(255,94,98,.45);
+  animation:devPulse 2.6s ease-in-out infinite;transition:transform .3s}
+.dev-card:hover .dev-avatar{transform:scale(1.08) rotate(-4deg)}
+@keyframes devPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,94,98,.45)}
+  50%{box-shadow:0 0 0 10px rgba(255,94,98,0)}}
+.dev-name{font-size:1.15rem;font-weight:700;color:var(--text1)}
+.dev-org{font-size:.8rem;color:var(--text3);margin-bottom:14px}
+.dev-links{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-bottom:12px}
+.dev-links a{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;
+  color:var(--text2);text-decoration:none;padding:6px 12px;border-radius:20px;
+  border:1px solid var(--border);transition:.2s}
+.dev-links a:hover{color:var(--solar);border-color:var(--solar);
+  background:rgba(245,158,11,.08);transform:translateY(-2px)}
+.dev-tag{font-size:.75rem;color:var(--text3)}
+
+/* imbalance badge: whichever cell is currently highest/lowest in its pack */
+.cell-bar-inner.cell-max,.cell-bar-inner.cell-min{border-color:currentColor}
+.cell-bar-inner.cell-max{color:#38bdf8}
+.cell-bar-inner.cell-min{color:#fb923c}
+.cell-badge{position:absolute;top:2px;right:2px;font-size:.55rem;line-height:1;
+  width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  background:currentColor;color:#0a0f1e!important;font-weight:700;z-index:2}
 .cell-num{font-size:.6rem;color:var(--text3)}
 .cell-mv{font-size:.62rem;color:var(--text2);font-variant-numeric:tabular-nums}
 
@@ -1298,6 +1327,19 @@ aside#sidebar{display:flex;flex-direction:column}
     </div>
   </div>
 
+  <!-- Developer -->
+  <div class="card dev-card">
+    <div class="dev-avatar"><i class="fa fa-bolt"></i></div>
+    <div class="dev-name">Manoranjan</div>
+    <div class="dev-org">ElectroIoT</div>
+    <div class="dev-links">
+      <a href="https://manoranjan.dev" target="_blank" rel="noopener"><i class="fa fa-globe"></i> manoranjan.dev</a>
+      <a href="https://electroiot.in" target="_blank" rel="noopener"><i class="fa fa-microchip"></i> electroiot.in</a>
+      <a href="https://github.com/manoranjan2050/Solar-Bridge-Flin-Fution-JKBMS" target="_blank" rel="noopener"><i class="fa-brands fa-github"></i> Source on GitHub</a>
+    </div>
+    <div class="dev-tag">Built with care, one Raspberry Pi at a time ☀️</div>
+  </div>
+
   <!-- Change Password -->
   <div class="card" style="grid-column:1/-1;margin-top:16px" id="change-pwd-card">
     <div class="card-title"><i class="fa fa-key"></i> Change Dashboard Login</div>
@@ -2196,11 +2238,22 @@ function updateCells(containerId, prefix, bmsNum) {
   const soc  = parseInt(D['bank_battery_soc'] || D[`${prefix}_battery_soc`] || 0);
   const mode = batA > 0.5 ? 'charging' : batA < -0.5 ? 'discharging' : '';
   const low  = soc > 0 && soc <= 15;
+
+  // Imbalance badge: find this pack's highest/lowest cell right now (the
+  // ones worth watching), same idea as the mobile app's min/max highlight.
+  let minV = Infinity, maxV = -Infinity;
+  for (let i = 1; i <= 16; i++) {
+    const mv = D[`${prefix}_cell_${String(i).padStart(2,'0')}_voltage`];
+    if (mv) { if (mv < minV) minV = mv; if (mv > maxV) maxV = mv; }
+  }
+  const hasSpread = isFinite(minV) && isFinite(maxV) && (maxV - minV) > 0.0005;
+
   for (let i = 1; i <= 16; i++) {
     const key = `${prefix}_cell_${String(i).padStart(2,'0')}_voltage`;
     const mv = D[key];
     const fill = document.getElementById(`${prefix}_cf_${i}`);
     const lbl  = document.getElementById(`${prefix}_cv_${i}`);
+    const inner = fill ? fill.parentElement : null;
     if (mv && fill && lbl) {
       const p = cellPct(mv);
       fill.style.height = Math.max(4, p) + '%';
@@ -2210,6 +2263,22 @@ function updateCells(containerId, prefix, bmsNum) {
         + (low ? ' low' : '');
       lbl.textContent = (mv * 1000).toFixed(0) + 'mV';
       lbl.style.color = cellLabelColor(p);
+
+      if (inner) {
+        const isMax = hasSpread && mv === maxV, isMin = hasSpread && mv === minV;
+        inner.className = 'cell-bar-inner' + (isMax ? ' cell-max' : isMin ? ' cell-min' : '');
+        let badge = inner.querySelector('.cell-badge');
+        if (isMax || isMin) {
+          if (!badge) {
+            badge = document.createElement('span');
+            badge.className = 'cell-badge';
+            inner.appendChild(badge);
+          }
+          badge.textContent = isMax ? '▲' : '▼';
+        } else if (badge) {
+          badge.remove();
+        }
+      }
     }
   }
 }
