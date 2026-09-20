@@ -17,6 +17,7 @@
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 <style>
 :root{
   --bg0:#0a0f1e;--bg1:#111827;--bg2:#1a2234;--bg3:#232f45;
@@ -1319,26 +1320,45 @@ aside#sidebar{display:flex;flex-direction:column}
 
   <!-- Mobile App / API Token -->
   <div class="card" style="grid-column:1/-1;margin-top:16px" id="api-token-card">
-    <div class="card-title"><i class="fa fa-mobile-screen-button"></i> Mobile App / API Access</div>
+    <div class="card-title"><i class="fa fa-mobile-screen-button"></i> Mobile App Setup</div>
     <p style="font-size:.85rem;color:var(--text2);line-height:1.6;margin-bottom:14px">
-      Paste this token into the Solar Bridge mobile app's setup screen along with this
-      dashboard's address (or your Cloudflare Tunnel domain). The app sends it as
-      <code>Authorization: Bearer &lt;token&gt;</code> on every request — treat it like a password.
+      <b style="color:var(--text1)">Install the app, then scan this code — that's it.</b>
+      No typing a server address or a 40-character token on a phone keyboard.
     </p>
-    <div class="form-grid">
-      <div class="form-group" style="grid-column:1/-1">
-        <label>API Token</label>
-        <div style="display:flex;gap:8px">
-          <input id="api-token-val" type="password" readonly value="••••••••••••••••••••••••••••••••">
-          <button class="btn btn-secondary btn-sm" onclick="toggleTokenVisible()"><i class="fa fa-eye" id="api-token-eye"></i></button>
-          <button class="btn btn-secondary btn-sm" onclick="copyApiToken()"><i class="fa fa-copy"></i> Copy</button>
+    <div style="display:flex;gap:24px;flex-wrap:wrap;align-items:flex-start">
+      <div style="text-align:center">
+        <div id="pair-qr" style="width:180px;height:180px;background:#fff;border-radius:12px;padding:10px;display:flex;align-items:center;justify-content:center">
+          <span style="color:#888;font-size:.8rem">Loading...</span>
+        </div>
+        <div style="font-size:.75rem;color:var(--text3);margin-top:8px;max-width:180px">
+          Open the app → <b>Scan QR to Pair</b>
         </div>
       </div>
-    </div>
-    <div style="display:flex;gap:10px;margin-top:6px;align-items:center">
-      <button class="btn btn-danger btn-sm" onclick="regenerateApiToken()">
-        <i class="fa fa-rotate"></i> Regenerate Token</button>
-      <span style="font-size:.8rem;color:var(--text3)">Regenerating signs out every app using the old token immediately.</span>
+      <div style="flex:1;min-width:220px">
+        <details>
+          <summary style="cursor:pointer;font-size:.82rem;color:var(--text2)">
+            Can't scan? Enter these manually instead</summary>
+          <div class="form-grid" style="margin-top:10px">
+            <div class="form-group" style="grid-column:1/-1">
+              <label>Dashboard Address</label>
+              <input id="pair-url-val" readonly value="--">
+            </div>
+            <div class="form-group" style="grid-column:1/-1">
+              <label>API Token</label>
+              <div style="display:flex;gap:8px">
+                <input id="api-token-val" type="password" readonly value="••••••••••••••••••••••••••••••••">
+                <button class="btn btn-secondary btn-sm" onclick="toggleTokenVisible()"><i class="fa fa-eye" id="api-token-eye"></i></button>
+                <button class="btn btn-secondary btn-sm" onclick="copyApiToken()"><i class="fa fa-copy"></i> Copy</button>
+              </div>
+            </div>
+          </div>
+        </details>
+        <div style="display:flex;gap:10px;margin-top:14px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-danger btn-sm" onclick="regenerateApiToken()">
+            <i class="fa fa-rotate"></i> Regenerate Token</button>
+          <span style="font-size:.8rem;color:var(--text3)">Regenerating signs out every app using the old token immediately — re-scan after.</span>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2820,7 +2840,30 @@ async function loadApiToken() {
     if (!r.ok) return;
     const j = await r.json();
     _apiToken = j.token;
+    renderPairingQr();
   } catch(e) { /* not admin, or offline — token card just stays masked */ }
+}
+
+function renderPairingQr() {
+  if (!_apiToken) return;
+  // Whatever address this browser is using right now (LAN IP, solar.local,
+  // or the Cloudflare domain) is by definition reachable from here — the
+  // natural default for the phone that's about to scan this same screen.
+  const baseUrl = window.location.origin;
+  const urlField = document.getElementById('pair-url-val');
+  if (urlField) urlField.value = baseUrl;
+
+  const box = document.getElementById('pair-qr');
+  if (!box || typeof qrcode !== 'function') return;
+  try {
+    const payload = JSON.stringify({url: baseUrl, token: _apiToken});
+    const qr = qrcode(0, 'M');
+    qr.addData(payload);
+    qr.make();
+    box.innerHTML = qr.createSvgTag({cellSize: 5, margin: 2});
+  } catch (e) {
+    box.innerHTML = '<span style="color:#888;font-size:.75rem;padding:8px">QR unavailable — use manual entry</span>';
+  }
 }
 function toggleTokenVisible() {
   const inp = document.getElementById('api-token-val');
@@ -2851,7 +2894,8 @@ async function regenerateApiToken() {
     document.getElementById('api-token-val').type = 'password';
     document.getElementById('api-token-val').value = '••••••••••••••••••••••••••••••••';
     document.getElementById('api-token-eye').className = 'fa fa-eye';
-    toast('New token issued','ok');
+    renderPairingQr();
+    toast('New token issued — re-scan the QR code on your phone','ok');
   } catch(e) { toast('Regenerate failed','err'); }
 }
 
