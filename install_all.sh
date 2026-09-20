@@ -63,8 +63,9 @@ if [[ "$NONINT" == "1" ]]; then
     MQTT_PASS=${SOLAR_MQTT_PASS:-}
     INV_PORT=${SOLAR_INV_PORT:-/dev/hidraw0}
     BMS_PORT=${SOLAR_BMS_PORT:-/dev/ttyUSB0}
-    BMS_COUNT=${SOLAR_BMS_COUNT:-2}
+    BMS_FRAME_IDS=${SOLAR_BMS_FRAME_IDS:-0x00,0x05}
     BMS_CELLS=${SOLAR_BMS_CELLS:-16}
+    BMS_CAPACITY_AH=${SOLAR_BMS_CAPACITY_AH:-100}
     DASH_PORT=${SOLAR_DASH_PORT:-8080}
     DASH_HOST=${SOLAR_DASH_HOST:-solarbridge}
     DASH_PASS=${SOLAR_DASH_PASS:-solar}      # default image login: admin / solar
@@ -92,11 +93,18 @@ INV_PORT=${INV_PORT:-/dev/hidraw0}
 read -p "  BMS RS485 port                    [/dev/ttyUSB0]: " BMS_PORT
 BMS_PORT=${BMS_PORT:-/dev/ttyUSB0}
 
-read -p "  Number of BMS units               [2]: " BMS_COUNT
-BMS_COUNT=${BMS_COUNT:-2}
+echo "  (RS485 address byte per physical pack, comma-separated. The default"
+echo "   0x00,0x05 matches the two-pack setup this project was built against —"
+echo "   if your packs use different addresses, find them from a live capture"
+echo "   first; don't guess.)"
+read -p "  BMS RS485 frame IDs               [0x00,0x05]: " BMS_FRAME_IDS
+BMS_FRAME_IDS=${BMS_FRAME_IDS:-0x00,0x05}
 
 read -p "  Cells per BMS pack                [16]: " BMS_CELLS
 BMS_CELLS=${BMS_CELLS:-16}
+
+read -p "  Ah rating per pack (label only)   [100]: " BMS_CAPACITY_AH
+BMS_CAPACITY_AH=${BMS_CAPACITY_AH:-100}
 
 read -p "  Dashboard web port                [8080]: " DASH_PORT
 DASH_PORT=${DASH_PORT:-8080}
@@ -111,7 +119,7 @@ hr
 info "Installing with these settings:"
 echo "   MQTT:      $MQTT_USER@$MQTT_HOST:$MQTT_PORT"
 echo "   Inverter:  $INV_PORT"
-echo "   BMS:       $BMS_PORT  (${BMS_COUNT}× packs, ${BMS_CELLS} cells each)"
+echo "   BMS:       $BMS_PORT  (frame IDs ${BMS_FRAME_IDS}, ${BMS_CELLS} cells each)"
 echo "   Dashboard: http://$DASH_HOST.local:$DASH_PORT  (and http://$(hostname -I | awk '{print $1}'):$DASH_PORT)"
 echo "   Login:     $([[ -n "$DASH_PASS" ]] && echo "enabled (user: admin)" || echo "disabled")"
 hr
@@ -183,10 +191,13 @@ protocol = PI30
 poll_interval = 10
 
 [jkbms]
+brand = JKBMS
 port = $BMS_PORT
 baud = 115200
 poll_interval = 10
 cell_count = $BMS_CELLS
+frame_ids = $BMS_FRAME_IDS
+pack_capacity_ah = $BMS_CAPACITY_AH
 
 [dashboard]
 username = admin
@@ -434,7 +445,7 @@ echo -e "  ${Y}📊 Dashboard:${N}   http://$DASH_HOST.local:${DASH_PORT}"
 echo -e "                  http://${PI_IP}:${DASH_PORT}"
 echo -e "  ${Y}🔌 MQTT:${N}       ${MQTT_USER}@${MQTT_HOST}:${MQTT_PORT}"
 echo -e "  ${Y}⚡ Inverter:${N}   ${INV_PORT}"
-echo -e "  ${Y}🔋 BMS:${N}        ${BMS_PORT}  (${BMS_COUNT}× packs)"
+echo -e "  ${Y}🔋 BMS:${N}        ${BMS_PORT}  (frame IDs ${BMS_FRAME_IDS})"
 echo -e "  ${Y}🔔 Alerts:${N}     configure on the Notifications page"
 echo ""
 echo -e "  ${C}Service commands:${N}"

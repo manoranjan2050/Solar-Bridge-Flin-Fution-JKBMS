@@ -92,6 +92,8 @@ Environment variables read by the installer in image mode — edit
 | `SOLAR_MQTT_HOST` | `homeassistant.local` | Pre-filled MQTT broker |
 | `SOLAR_INV_PORT` / `SOLAR_BMS_PORT` | `/dev/hidraw0` / `/dev/ttyUSB0` | Device ports |
 | `SOLAR_BMS_CELLS` | `16` | Cells per pack |
+| `SOLAR_BMS_FRAME_IDS` | `0x00,0x05` | RS485 address per physical pack, comma-separated — add more to bake in extra packs |
+| `SOLAR_BMS_CAPACITY_AH` | `100` | Ah rating per pack (dashboard/HA label only) |
 | `SOLAR_INSTALL_TAILSCALE` | `n` | `1` = bake the Tailscale package in |
 
 Image identity (hostname, user, timezone, SSH) lives in [`pigen/config`](pigen/config).
