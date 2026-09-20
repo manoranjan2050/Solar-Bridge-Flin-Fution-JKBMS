@@ -248,6 +248,7 @@ cp "$SRC_DIR/notifier.py"       "$INSTALL_DIR/"
 cp "$SRC_DIR/automation.py"     "$INSTALL_DIR/"
 cp "$SRC_DIR/backup_manager.py"   "$INSTALL_DIR/" 2>/dev/null || true
 cp "$SRC_DIR/cf_manage.sh"        "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/cf_manage.sh" || true
+cp "$SRC_DIR/cf_setup.sh"         "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/cf_setup.sh"  || true
 cp "$SRC_DIR/failsafe_hotspot.sh" "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/failsafe_hotspot.sh" || true
 [[ -f "$SRC_DIR/automation.json" ]] && cp "$SRC_DIR/automation.json" "$INSTALL_DIR/"
 # devices/ — the inverter/BMS adapter package solar_bridge.py imports; rm -rf

@@ -2,7 +2,8 @@
 # ╔══════════════════════════════════════════════════════════════════════════╗
 # ║  cf_manage.sh — privileged Cloudflare Tunnel helper for the dashboard    ║
 # ║  Called ONLY via: sudo /opt/solar-bridge/cf_manage.sh <action> [arg]    ║
-# ║  Actions: status | restart | set-hostname <fqdn>                        ║
+# ║  Actions: status | restart | set-hostname <fqdn> | install-cloudflared  ║
+# ║           | finish-setup <tunnel_id> <fqdn> <creds_path>                ║
 # ║  Strictly validates input so the web UI can never inject a command.     ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 set -euo pipefail
@@ -65,6 +66,74 @@ YAML
     fi
     systemctl restart cloudflared
     emit "ok=set host=$NEW route=$route"
+    ;;
+
+  install-cloudflared)
+    if command -v cloudflared >/dev/null 2>&1; then
+      emit "ok=already_installed"
+      exit 0
+    fi
+    ARCH="$(dpkg --print-architecture)"
+    case "$ARCH" in
+      arm64|armhf) ;;
+      *) emit "error=unsupported arch $ARCH"; exit 1 ;;
+    esac
+    TMPDEB="$(mktemp --suffix=.deb)"
+    if curl -fsSL -o "$TMPDEB" "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${ARCH}.deb"; then
+      dpkg -i "$TMPDEB" >/dev/null 2>&1 || apt-get install -f -y >/dev/null 2>&1
+      rm -f "$TMPDEB"
+      if command -v cloudflared >/dev/null 2>&1; then
+        emit "ok=installed"
+      else
+        emit "error=install failed"; exit 1
+      fi
+    else
+      rm -f "$TMPDEB"
+      emit "error=download failed"; exit 1
+    fi
+    ;;
+
+  finish-setup)
+    # Completes first-time setup after the unprivileged cf_setup.sh has
+    # authorised, created the tunnel, and routed DNS (all per-user
+    # cloudflared state — no root needed for those). This action only does
+    # the parts that genuinely need root: writing /etc/cloudflared, and
+    # installing/starting the system service.
+    TUNNEL_ID="${2:-}"; NEW="${3:-}"; CREDS_SRC="${4:-}"
+
+    [[ "$TUNNEL_ID" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || \
+      { emit "error=invalid tunnel id"; exit 1; }
+    if [[ ! "$NEW" =~ ^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$ ]]; then
+      emit "error=invalid hostname"; exit 1
+    fi
+    # Restrict the credentials source to a real user's own .cloudflared dir,
+    # named after the exact validated tunnel ID above — never an arbitrary path.
+    if [[ ! "$CREDS_SRC" =~ ^/home/[a-zA-Z0-9_-]+/\.cloudflared/${TUNNEL_ID}\.json$ ]]; then
+      emit "error=invalid credentials path"; exit 1
+    fi
+    [[ -f "$CREDS_SRC" ]] || { emit "error=credentials file not found"; exit 1; }
+
+    mkdir -p /etc/cloudflared
+    cp "$CREDS_SRC" "/etc/cloudflared/$TUNNEL_ID.json"
+
+    cat > "$CFG" <<YAML
+tunnel: $TUNNEL_ID
+credentials-file: /etc/cloudflared/$TUNNEL_ID.json
+protocol: http2
+
+ingress:
+  - hostname: $NEW
+    service: http://localhost:8080
+  - service: http_status:404
+YAML
+
+    cloudflared service install >/dev/null 2>&1 || true
+    systemctl enable cloudflared >/dev/null 2>&1 || true
+    systemctl restart cloudflared
+    sleep 2
+    running=no
+    systemctl is-active --quiet cloudflared && running=yes
+    emit "ok=finished host=$NEW tunnel=$TUNNEL_ID running=$running"
     ;;
 
   *)

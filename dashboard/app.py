@@ -1092,19 +1092,39 @@ def api_tailscale():
 
 # ── Cloudflare Tunnel (public custom domain) ──────────────────────────────────
 CF_HELPER = "/opt/solar-bridge/cf_manage.sh"
+CF_SETUP  = "/opt/solar-bridge/cf_setup.sh"
 
-def _cf_call(*args):
+def _parse_kv(out):
+    """Parse "k=v k=v ..." helper-script output (values have no spaces)."""
+    res = {}
+    for tok in out.split():
+        if "=" in tok:
+            k, _, v = tok.partition("=")
+            res[k] = v
+    return res
+
+def _cf_call(*args, timeout=40):
     """Run the privileged cloudflare helper; return its one-line result dict."""
     try:
         r = subprocess.run(["sudo", CF_HELPER, *args],
-                           capture_output=True, text=True, timeout=40)
+                           capture_output=True, text=True, timeout=timeout)
         out = (r.stdout + r.stderr).strip()
-        # parse "k=v k=v ..." (values may contain dots/hyphens, no spaces)
-        res = {}
-        for tok in out.split():
-            if "=" in tok:
-                k, _, v = tok.partition("=")
-                res[k] = v
+        res = _parse_kv(out)
+        res["_raw"] = out
+        res["_rc"] = r.returncode
+        return res
+    except Exception as e:
+        return {"_raw": str(e), "_rc": 1, "error": str(e)}
+
+def _cf_setup_call(*args, timeout=15):
+    """Run the UNprivileged first-time-setup helper (no sudo — see cf_setup.sh
+    for why login/tunnel-create/DNS-route must run as this process's own
+    user, not root)."""
+    try:
+        r = subprocess.run([CF_SETUP, *args],
+                           capture_output=True, text=True, timeout=timeout)
+        out = (r.stdout + r.stderr).strip()
+        res = _parse_kv(out)
         res["_raw"] = out
         res["_rc"] = r.returncode
         return res
@@ -1145,6 +1165,52 @@ def api_cloudflare_hostname():
         notify_change(f"Cloudflare public URL changed to *https://{host}*")
         return jsonify({"ok": True, "url": f"https://{host}",
                         "route": r.get("route", ""), "msg": r.get("_raw", "")})
+    return jsonify({"ok": False, "msg": r.get("error", r.get("_raw", "failed"))}), 400
+
+# ── Cloudflare Tunnel — first-time setup wizard (for new users, no SSH) ───────
+# Mirrors setup_cloudflare.sh / CLOUDFLARE_TUNNEL.md, but as pollable steps a
+# web UI can drive: install cloudflared -> authorise (browser link) -> pick a
+# hostname -> provision. The Cloudflare login step is inherently an
+# out-of-band browser flow (cloudflared prints a URL you open yourself) —
+# there's no way to automate that away, so the UI surfaces the link instead.
+
+@app.route("/api/cloudflare/setup/install", methods=["POST"])
+@admin_required
+def api_cloudflare_setup_install():
+    r = _cf_call("install-cloudflared", timeout=60)
+    ok = r.get("ok") in ("installed", "already_installed")
+    return jsonify({"ok": ok, "msg": r.get("error", r.get("_raw", ""))})
+
+@app.route("/api/cloudflare/setup/login", methods=["POST"])
+@admin_required
+def api_cloudflare_setup_login():
+    r = _cf_setup_call("login-start")
+    ok = r.get("ok") == "started"
+    return jsonify({"ok": ok, "msg": r.get("error", r.get("_raw", ""))})
+
+@app.route("/api/cloudflare/setup/login/status")
+@admin_required
+def api_cloudflare_setup_login_status():
+    r = _cf_setup_call("login-poll")
+    if r.get("authorized") == "yes":
+        return jsonify({"status": "authorized"})
+    if r.get("url"):
+        return jsonify({"status": "pending", "url": r["url"]})
+    if r.get("error"):
+        return jsonify({"status": "error", "msg": r["error"]})
+    return jsonify({"status": "pending"})
+
+@app.route("/api/cloudflare/setup/finish", methods=["POST"])
+@admin_required
+def api_cloudflare_setup_finish():
+    host = (request.json or {}).get("hostname", "").strip().lower()
+    if not host:
+        return jsonify({"ok": False, "msg": "hostname required"}), 400
+    r = _cf_setup_call("provision", host, timeout=60)
+    if r.get("ok") == "finished":
+        notify_change(f"Cloudflare Tunnel set up — public URL: *https://{host}*")
+        return jsonify({"ok": True, "url": f"https://{host}",
+                        "running": r.get("running") == "yes"})
     return jsonify({"ok": False, "msg": r.get("error", r.get("_raw", "failed"))}), 400
 
 @app.route("/api/tailscale/toggle", methods=["POST"])

@@ -2340,8 +2340,8 @@ async function loadCloudflare() {
       manage.style.display = 'none';
       setup.style.display = 'block';
       setup.innerHTML = 'Cloudflare Tunnel gives you a public <b>https://your.domain</b> with no port-forwarding. '
-        + 'Install + first-time setup is a one-time terminal step — see the '
-        + '<b>CLOUDFLARE_TUNNEL.md</b> guide in the project.';
+        + '<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="cfInstall()">'
+        + '<i class="fa fa-download"></i> Install cloudflared</button></div>';
       return;
     }
     if (j.configured && j.running) {
@@ -2363,10 +2363,13 @@ async function loadCloudflare() {
       if (inp && !inp.value) inp.value = j.hostname || '';
     } else {
       manage.style.display = 'none'; setup.style.display = 'block';
-      setup.innerHTML = 'cloudflared is installed but the tunnel isn\'t connected yet. '
-        + 'Run the one-time setup on the Pi:<br><code>cd /opt/solar-bridge &amp;&amp; '
-        + 'bash setup_cloudflare.sh solar.yourdomain.com</code><br>'
-        + '(needs a browser login — see CLOUDFLARE_TUNNEL.md). After that, manage it here.';
+      // Don't stomp an in-progress wizard (auth link showing, polling, etc.)
+      // if the user hits "Refresh" or re-visits this page mid-setup.
+      if (!setup.dataset.wizardActive) {
+        setup.innerHTML = 'cloudflared is installed. Set up a public domain — no SSH needed.'
+          + '<div style="margin-top:10px"><button class="btn btn-primary btn-sm" onclick="cfStartSetup()">'
+          + '<i class="fa fa-globe"></i> Set Up Public Domain</button></div>';
+      }
     }
   } catch(e) {
     if (st) st.textContent = '--';
@@ -2403,6 +2406,103 @@ async function cfSetHostname() {
     msg.style.color = 'var(--load)';
   }
   setTimeout(loadCloudflare, 2000);
+}
+
+// ── First-time Cloudflare Tunnel setup wizard (no SSH needed) ────────────────
+async function cfInstall() {
+  const setup = document.getElementById('cf-setup');
+  setup.dataset.wizardActive = '1';
+  setup.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Installing cloudflared...';
+  const j = await (await fetch('/api/cloudflare/setup/install', {method:'POST'})).json();
+  delete setup.dataset.wizardActive;
+  if (!j.ok) {
+    setup.innerHTML = 'Install failed: ' + (j.msg || 'unknown error')
+      + '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="cfInstall()">Retry</button></div>';
+    return;
+  }
+  loadCloudflare();
+}
+
+let _cfLoginTimer = null;
+
+async function cfStartSetup() {
+  const setup = document.getElementById('cf-setup');
+  setup.dataset.wizardActive = '1';
+  setup.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Starting Cloudflare login...';
+  const j = await (await fetch('/api/cloudflare/setup/login', {method:'POST'})).json();
+  if (!j.ok) {
+    delete setup.dataset.wizardActive;
+    setup.innerHTML = 'Could not start login: ' + (j.msg || 'unknown error')
+      + '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="cfStartSetup()">Retry</button></div>';
+    return;
+  }
+  setup.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Waiting for the Cloudflare login link...';
+  clearInterval(_cfLoginTimer);
+  _cfLoginTimer = setInterval(cfPollLogin, 1500);
+  cfPollLogin();
+}
+
+async function cfPollLogin() {
+  const setup = document.getElementById('cf-setup');
+  let j;
+  try { j = await (await fetch('/api/cloudflare/setup/login/status')).json(); }
+  catch (e) { return; }  // transient — keep polling
+
+  if (j.status === 'authorized') {
+    clearInterval(_cfLoginTimer);
+    setup.innerHTML =
+      '<span style="color:var(--battery)"><i class="fa fa-circle-check"></i> Authorised with Cloudflare.</span>'
+      + '<div class="form-group" style="margin-top:10px">'
+      + '  <label>Public hostname (subdomain.yourdomain.com)</label>'
+      + '  <input id="cf-new-host" placeholder="solar.yourdomain.com">'
+      + '</div>'
+      + '<button class="btn btn-primary btn-sm" onclick="cfFinishSetup()"><i class="fa fa-rocket"></i> Create Tunnel</button>';
+    return;
+  }
+  if (j.status === 'error') {
+    clearInterval(_cfLoginTimer);
+    delete setup.dataset.wizardActive;
+    setup.innerHTML = 'Login failed: ' + (j.msg || 'unknown error')
+      + '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="cfStartSetup()">Retry</button></div>';
+    return;
+  }
+  if (j.url) {
+    setup.innerHTML = 'Open this link, log into Cloudflare, and pick the domain (zone) you want to use:'
+      + `<div style="margin-top:8px"><a href="${j.url}" target="_blank" class="btn btn-primary btn-sm">`
+      + '<i class="fa fa-up-right-from-square"></i> Authorise with Cloudflare</a></div>'
+      + '<div style="margin-top:8px;color:var(--text3)"><i class="fa fa-spinner fa-spin"></i> Waiting for you to finish in the browser...</div>';
+  }
+}
+
+async function cfFinishSetup() {
+  const host = (document.getElementById('cf-new-host').value || '').trim().toLowerCase();
+  const setup = document.getElementById('cf-setup');
+  if (!/^([a-z0-9-]+\.)+[a-z]{2,}$/.test(host)) {
+    toast('Enter a valid hostname like solar.yourdomain.com', 'err');
+    return;
+  }
+  setup.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Creating tunnel + routing DNS (this can take ~20s)...';
+  try {
+    const r = await fetch('/api/cloudflare/setup/finish', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({hostname: host})});
+    const j = await r.json();
+    delete setup.dataset.wizardActive;
+    if (j.ok) {
+      setup.innerHTML = `<span style="color:var(--battery)"><i class="fa fa-circle-check"></i> Live at `
+        + `<a href="${j.url}" target="_blank" style="color:var(--solar)">${j.url}</a></span>`
+        + '<div style="margin-top:8px;color:var(--load)"><i class="fa fa-triangle-exclamation"></i> '
+        + 'This URL is now public — add Cloudflare Access to lock it down (see CLOUDFLARE_TUNNEL.md → "Lock it down").</div>';
+      toast('Cloudflare Tunnel is live!', 'ok');
+      setTimeout(loadCloudflare, 3000);
+    } else {
+      setup.innerHTML = 'Setup failed: ' + (j.msg || 'unknown error')
+        + '<div style="margin-top:8px"><button class="btn btn-secondary btn-sm" onclick="cfFinishSetup()">Retry</button></div>';
+    }
+  } catch (e) {
+    delete setup.dataset.wizardActive;
+    setup.innerHTML = 'Setup failed: ' + e;
+  }
 }
 
 async function tsToggle(action) {
