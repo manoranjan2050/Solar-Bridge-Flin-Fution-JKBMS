@@ -50,6 +50,7 @@ SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 # All source files must sit next to this installer
 for f in solar_bridge.py solar_db.py notifier.py automation.py \
+         devices/__init__.py devices/registry.py \
          dashboard/app.py dashboard/templates/index.html dashboard/templates/login.html; do
     [[ -f "$SRC_DIR/$f" ]] || err "Missing source file: $f (run installer from the copied source dir)"
 done
@@ -249,6 +250,10 @@ cp "$SRC_DIR/backup_manager.py"   "$INSTALL_DIR/" 2>/dev/null || true
 cp "$SRC_DIR/cf_manage.sh"        "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/cf_manage.sh" || true
 cp "$SRC_DIR/failsafe_hotspot.sh" "$INSTALL_DIR/" 2>/dev/null && chmod +x "$INSTALL_DIR/failsafe_hotspot.sh" || true
 [[ -f "$SRC_DIR/automation.json" ]] && cp "$SRC_DIR/automation.json" "$INSTALL_DIR/"
+# devices/ — the inverter/BMS adapter package solar_bridge.py imports; rm -rf
+# + cp -r so a renamed/removed adapter file doesn't linger from a prior install.
+rm -rf "$INSTALL_DIR/devices"
+cp -r "$SRC_DIR/devices" "$INSTALL_DIR/"
 ok "Bridge + modules copied"
 
 # Dashboard
