@@ -208,21 +208,39 @@ guide — all from the dashboard's Network page. Guides: **[CLOUDFLARE_TUNNEL.md
 
 ---
 
-## 📱 Mobile App / API
+## 📱 Mobile App
+
+The Flutter companion app — **[SolarBridgeApp](https://github.com/manoranjan2050/SolarBridgeApp)** —
+pairs with this dashboard via a QR code, no typing a server address or a 40-character token on a phone
+keyboard. Same live data and inverter control as the web dashboard, with a themeable UI, animated
+battery/cell views, and real apply-verification on every inverter command (it polls the actual
+hardware state after sending a control, instead of trusting the API's "queued" response).
+
+<table>
+  <tr>
+    <td width="25%" align="center"><img src="image/app/pairing.png" width="100%"><br><b>QR pairing</b></td>
+    <td width="25%" align="center"><img src="image/app/overview.png" width="100%"><br><b>Overview</b></td>
+    <td width="25%" align="center"><img src="image/app/battery.png" width="100%"><br><b>Battery</b></td>
+    <td width="25%" align="center"><img src="image/app/inverter.png" width="100%"><br><b>Inverter</b></td>
+  </tr>
+</table>
+
+### API
 
 Every `/api/*` route accepts a per-install **Bearer token** as an alternative to the browser session
 cookie, so a native mobile app can talk to the same backend a phone's browser would use — no separate
-API to maintain.
+API to maintain. A separate **read-only viewer token** (dashboard → System → *Demo / Viewer Access*)
+pairs the same way but can never change a setting — handy for a demo phone or a Play Store reviewer.
 
 ```
 GET  /api/token              → { "token": "..." }   (session-authenticated; System page)
 POST /api/token/regenerate   → { "token": "..." }   (invalidates the old token immediately)
+GET  /api/token/viewer       → { "token": "..." }   (read-only pairing token)
 ```
 
 Paste the token into the app as `Authorization: Bearer <token>` (or `X-API-Token: <token>`). Combined
-with a **Cloudflare Tunnel** custom domain, this is the intended path for a companion app: the app talks
-to `https://solar.yourdomain.com/api/...` with the token, the same way the web dashboard talks to it
-with a session cookie. A Flutter companion app is planned — see [TODO.md](TODO.md).
+with a **Cloudflare Tunnel** custom domain, the app talks to `https://solar.yourdomain.com/api/...`
+with the token, the same way the web dashboard talks to it with a session cookie.
 
 ---
 

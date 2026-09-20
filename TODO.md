@@ -60,9 +60,10 @@ their phone — exactly like Solar Assistant OS. **Chosen approach: pi-gen / Cus
       register maps (same rule as the original PI30/JK BMS work).
 - [ ] **Dashboard device-picker UI** — Settings page dropdown to choose inverter/BMS
       brand + ports, instead of hand-editing config.ini (depends on the adapters above).
-- [ ] **Flutter companion app** — read-only + control screens mirroring the web
-      dashboard, using the new Bearer token against the existing `/api/*` routes.
-      Ship it as its own repo/module once the API surface above is stable.
+- [x] **Flutter companion app** — shipped as its own repo:
+      [SolarBridgeApp](https://github.com/manoranjan2050/SolarBridgeApp) — QR pairing,
+      live overview/battery/inverter screens, and control with real apply-verification
+      against the existing `/api/*` routes.
 
 ---
 
