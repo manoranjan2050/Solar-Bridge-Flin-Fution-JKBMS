@@ -92,6 +92,25 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True                   # JS can't read t
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"                  # CSRF hardening
 socketio  = SocketIO(app, async_mode="threading", cors_allowed_origins="*")
 
+# ── CORS for /api/* (Bearer-token clients: mobile app, a browser-based
+# companion, etc.) ────────────────────────────────────────────────────────
+# Safe to allow any origin here specifically because these routes are
+# token-authenticated, not cookie-authenticated — a page on another origin
+# can't forge the Authorization header the way it could ride along on a
+# cookie, so there's nothing for a wildcard origin to steal. The session
+# cookie itself is still SameSite=Lax and never sent cross-origin.
+@app.after_request
+def _add_cors_headers(resp):
+    if request.path.startswith("/api/"):
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Headers"] = "Authorization, X-API-Token, Content-Type"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    return resp
+
+@app.route("/api/<path:_any>", methods=["OPTIONS"])
+def _api_cors_preflight(_any):
+    return "", 204
+
 # ── Authentication (admin + view-only roles) ─────────────────────────────────
 def auth_creds():
     """Return (username, password) for the ADMIN account; '' password = no login."""
