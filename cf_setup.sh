@@ -39,8 +39,8 @@ case "$ACTION" in
   login-poll)
     if [[ -f "$CERT" ]]; then
       emit "authorized=yes"
-    elif [[ -f "$LOGFILE" ]] && grep -qoE 'https://dash\.cloudflare\.com/[a-zA-Z0-9/_.?=&-]+' "$LOGFILE"; then
-      URL="$(grep -oE 'https://dash\.cloudflare\.com/[a-zA-Z0-9/_.?=&-]+' "$LOGFILE" | head -1)"
+    elif [[ -f "$LOGFILE" ]] && grep -qoE 'https://dash\.cloudflare\.com/[a-zA-Z0-9/_.?=%&-]+' "$LOGFILE"; then
+      URL="$(grep -oE 'https://dash\.cloudflare\.com/[a-zA-Z0-9/_.?=%&-]+' "$LOGFILE" | head -1)"
       emit "url=$URL"
     else
       emit "pending=yes"
